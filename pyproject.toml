@@ -4,10 +4,10 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "well-log-toolkit"
-version = "0.1.152"
-description = "Fast LAS file processing with lazy loading and filtering for well log analysis"
+version = "0.1.153"
+description = "Petrophysical well log analysis with depth-weighted statistics, hierarchical filtering, and template-driven visualization"
 readme = "README.md"
-requires-python = ">=3.9"
+requires-python = ">=3.10"
 license = {text = "MIT"}
 authors = [
     {name = "Kristian dF Kollsgård", email = "kkollsg@gmail.com"}
@@ -21,12 +21,11 @@ keywords = [
     "petroleum-engineering"
 ]
 classifiers = [
-    "Development Status :: 3 - Alpha",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Science/Research",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.9",
     "Programming Language :: Python :: 3.10",
     "Programming Language :: Python :: 3.11",
     "Programming Language :: Python :: 3.12",
@@ -50,6 +49,7 @@ dev = [
     "black>=23.0.0",
     "ruff>=0.1.0",
     "mypy>=1.0.0",
+    "towncrier>=23.6.0",
 ]
 
 [project.urls]
@@ -57,7 +57,7 @@ Homepage = "https://github.com/kkollsga/well_log_toolkit"
 Documentation = "https://github.com/kkollsga/well_log_toolkit#readme"
 Repository = "https://github.com/kkollsga/well_log_toolkit"
 Issues = "https://github.com/kkollsga/well_log_toolkit/issues"
-Changelog = "https://github.com/kkollsga/well_log_toolkit/releases"
+Changelog = "https://github.com/kkollsga/well_log_toolkit/blob/main/CHANGELOG.md"
 
 [tool.setuptools]
 packages = ["well_log_toolkit"]
@@ -67,11 +67,11 @@ well_log_toolkit = ["py.typed"]
 
 [tool.black]
 line-length = 100
-target-version = ['py39']
+target-version = ['py310']
 
 [tool.ruff]
 line-length = 100
-target-version = "py39"
+target-version = "py310"
 
 [tool.ruff.lint]
 select = [
@@ -90,7 +90,7 @@ ignore = [
 ]
 
 [tool.mypy]
-python_version = "3.9"
+python_version = "3.10"
 warn_return_any = true
 warn_unused_configs = true
 disallow_untyped_defs = false
@@ -104,5 +104,41 @@ python_functions = ["test_*"]
 addopts = [
     "--strict-markers",
     "--strict-config",
-    "--cov=well_log_toolkit",
 ]
+
+[tool.towncrier]
+package = "well_log_toolkit"
+directory = "changes"
+filename = "CHANGELOG.md"
+title_format = "## [{version}] - {project_date}"
+issue_format = "[#{issue}](https://github.com/kkollsga/well_log_toolkit/issues/{issue})"
+
+[[tool.towncrier.type]]
+directory = "feature"
+name = "Features"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "bugfix"
+name = "Bug Fixes"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "breaking"
+name = "Breaking Changes"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "deprecation"
+name = "Deprecations"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "doc"
+name = "Documentation"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "misc"
+name = "Internal Changes"
+showcontent = true

@@ -2,7 +2,9 @@
 
 Fast, intuitive Python library for petrophysical well log analysis. Load LAS files, filter by zones, compute depth-weighted statistics, and create publication-quality log displays—all in just a few lines.
 
-[![Python](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
+[![PyPI version](https://img.shields.io/pypi/v/well-log-toolkit.svg)](https://pypi.org/project/well-log-toolkit/)
+[![Python](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
+[![CI](https://github.com/kkollsga/well_log_toolkit/actions/workflows/build-and-publish.yml/badge.svg)](https://github.com/kkollsga/well_log_toolkit/actions)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 ## Key Features
@@ -2362,6 +2364,6 @@ MIT License
 
 ## Need Help?
 
-- **Issues:** [GitHub Issues](https://github.com/yourusername/well-log-toolkit/issues)
+- **Issues:** [GitHub Issues](https://github.com/kkollsga/well_log_toolkit/issues)
+- **Changelog:** [CHANGELOG.md](CHANGELOG.md)
 - **Documentation:** See sections above
-- **Examples:** Check `/examples` directory (if available)
