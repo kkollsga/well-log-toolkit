@@ -18,16 +18,16 @@ class Template:
     Parameters
     ----------
     name : str, optional
-        Template name for identification
+        Template name for identification.
     tracks : list[dict], optional
         List of track definitions. If None, creates empty template.
 
     Attributes
     ----------
     name : str
-        Template name
+        Template name.
     tracks : list[dict]
-        List of track configurations
+        List of track configurations.
 
     Examples
     --------
@@ -93,41 +93,45 @@ class Template:
             - "depth": Depth axis track
         logs : list[dict], optional
             List of log configurations. Each dict can contain:
+
             - name (str): Property name
             - x_range (list[float, float]): Min and max x-axis values [left, right]
-            - scale (str): Optional override for this log's scale ("log" or "linear")
-              If not specified, uses the track's log_scale setting
+            - scale (str): Optional override for this log's scale ("log" or "linear").
+              If not specified, uses the track's log_scale setting.
             - color (str): Line color
-            - style (str): Line style - supports both matplotlib codes and friendly names:
-              Matplotlib: "-" (solid), "--" (dashed), "-." (dashdot), ":" (dotted), "none" (no line)
-              Friendly: "solid", "dashed", "dashdot", "dotted", "none"
-              Use "none" to show only markers without a connecting line
+            - style (str): Line style - supports both matplotlib codes and friendly names.
+              Matplotlib: "-" (solid), "--" (dashed), "-." (dashdot), ":" (dotted), "none" (no line).
+              Friendly: "solid", "dashed", "dashdot", "dotted", "none".
+              Use "none" to show only markers without a connecting line.
             - thickness (float): Line width
             - alpha (float): Transparency (0-1)
-            - marker (str): Marker style for data points (disabled by default). Supports:
-              Matplotlib codes: "o", "s", "D", "^", "v", "<", ">", "+", "x", "*", "p", "h", ".", ",", "|", "_"
+            - marker (str): Marker style for data points (disabled by default). Supports
+              Matplotlib codes: "o", "s", "D", "^", "v", "<", ">", "+", "x", "*", "p", "h", ".", ",", "|", "_".
               Friendly names: "circle", "square", "diamond", "triangle_up", "triangle_down",
               "triangle_left", "triangle_right", "plus", "cross", "star", "pentagon", "hexagon",
-              "point", "pixel", "vline", "hline"
+              "point", "pixel", "vline", "hline".
             - marker_size (float): Size of markers (default: 6)
             - marker_outline_color (str): Marker edge color (defaults to 'color')
-            - marker_fill (str): Marker fill color (optional). If not specified, markers are unfilled
+            - marker_fill (str): Marker fill color (optional). If not specified, markers are unfilled.
             - marker_interval (int): Show every nth marker (default: 1, shows all markers)
         fill : Union[dict, list[dict]], optional
             Fill configuration or list of fill configurations. Each fill dict can contain:
-            - left: Left boundary (string/number or dict)
-              - Simple: "track_edge", "CurveName", or numeric value
-              - Dict: {"curve": name}, {"value": float}, or {"track_edge": "left"}
+
+            - left: Left boundary (string/number or dict).
+              Simple: "track_edge", "CurveName", or numeric value.
+              Dict: ``{"curve": name}``, ``{"value": float}``, or ``{"track_edge": "left"}``.
             - right: Right boundary (same format as left)
             - color (str): Fill color name (for solid fills)
-            - colormap (str): Matplotlib colormap name (e.g., "viridis", "inferno")
-              Creates horizontal bands where depth intervals are colored based on curve values
+            - colormap (str): Matplotlib colormap name (e.g., "viridis", "inferno").
+              Creates horizontal bands where depth intervals are colored based on curve values.
             - colormap_curve (str): Curve name to use for colormap values (defaults to left boundary curve)
             - color_range (list): [min, max] values for colormap normalization
             - alpha (float): Transparency (0-1)
-            Multiple fills are drawn in order (first fill is drawn first, then subsequent fills on top)
+
+            Multiple fills are drawn in order (first fill is drawn first, then subsequent fills on top).
         tops : dict, optional
             Formation tops configuration with keys:
+
             - name (str): Property name containing tops
             - line_style (str): Line style for markers
             - line_width (float): Line thickness
@@ -529,7 +533,7 @@ class Template:
         Parameters
         ----------
         filepath : Union[str, Path]
-            Path to save JSON file
+            Path to save the JSON file.
 
         Examples
         --------

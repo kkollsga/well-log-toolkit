@@ -82,5 +82,5 @@ manager.load_las("log_data.las")
 
 # Properties from all sources are merged
 well = manager.well_Test
-print(well.property_names)  # Shows properties from both files
+print(well.properties)  # Shows properties from both files
 ```

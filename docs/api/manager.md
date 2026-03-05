@@ -1,7 +1,8 @@
 # WellDataManager
 
 ```{eval-rst}
-.. autoclass:: logsuite.WellDataManager
+.. autoclass:: logsuite.manager.data_manager.WellDataManager
    :members:
    :undoc-members:
+   :no-index:
 ```

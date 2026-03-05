@@ -37,11 +37,11 @@ y_pred = reg.predict(np.linspace(0.05, 0.35, 100))
 ## With Crossplots
 
 ```python
-from logsuite import Crossplot, PolynomialRegression
+from logsuite import Crossplot
 
-xplot = Crossplot(x=well.PHIE, y=well.PERM)
-xplot.add_regression(PolynomialRegression, degree=2)
-xplot.plot()
+xplot = Crossplot(wells=well, x="PHIE", y="PERM")
+xplot.add_regression("polynomial_2")
+xplot.show()
 ```
 
 ## Polynomial Degree

@@ -17,7 +17,6 @@ extensions = [
     "sphinx.ext.viewcode",
     "myst_parser",
     "sphinx_copybutton",
-    "sphinx_autodoc_typehints",
 ]
 
 templates_path = ["_templates"]
@@ -48,6 +47,10 @@ autodoc_default_options = {
     "members": True,
     "show-inheritance": True,
 }
+
+# Suppress warnings for duplicate object descriptions (from re-exports in __init__.py)
+# and docutils field list formatting (cosmetic NumPy-style docstring whitespace)
+suppress_warnings = ["app.add_object_description"]
 
 # MyST
 myst_enable_extensions = [

@@ -121,9 +121,9 @@ class Crossplot:
         (e.g., each well in each formation, each layer in each zone). Accepts string or dict.
         Default: None
     regression_by_shape_and_color : str or dict, optional
-        Alias for regression_by_color_and_shape. Provided for convenience - both parameters
-        do exactly the same thing. Use whichever order feels more natural.
-        Default: None
+        Alias for ``regression_by_color_and_shape``. Provided for convenience ---
+        both parameters do exactly the same thing. Use whichever order feels
+        more natural. Defaults to ``None``.
 
     Examples
     --------
@@ -497,7 +497,11 @@ class Crossplot:
                                 color_values = color_prop.values
                             df["color_val"] = color_values
                         except (AttributeError, KeyError, PropertyNotFoundError):
-                            # Silently use depth as fallback
+                            warnings.warn(
+                                f"Color property '{self.color}' not found in well "
+                                f"'{well.name}', falling back to depth",
+                                stacklevel=2,
+                            )
                             df["color_val"] = depths
                     elif self.color == "depth":
                         df["color_val"] = depths
@@ -519,8 +523,11 @@ class Crossplot:
                                 size_values = size_prop.values
                             df["size_val"] = size_values
                         except (AttributeError, KeyError, PropertyNotFoundError):
-                            # Silently skip if size property not found
-                            pass
+                            warnings.warn(
+                                f"Size property '{self.size}' not found in well "
+                                f"'{well.name}', ignoring size mapping",
+                                stacklevel=2,
+                            )
 
                     # Add shape property if specified
                     if self.shape == "label":
@@ -539,13 +546,19 @@ class Crossplot:
                                 shape_values = shape_prop.values
                             df["shape_val"] = shape_values
                         except (AttributeError, KeyError, PropertyNotFoundError):
-                            # Silently skip if shape property not found
-                            pass
+                            warnings.warn(
+                                f"Shape property '{self.shape}' not found in well "
+                                f"'{well.name}', ignoring shape mapping",
+                                stacklevel=2,
+                            )
 
                     all_data.append(df)
 
-                except (AttributeError, KeyError, PropertyNotFoundError):
-                    # Silently skip wells that don't have the required properties
+                except (AttributeError, KeyError, PropertyNotFoundError) as e:
+                    warnings.warn(
+                        f"Skipping well '{well.name}': {e}",
+                        stacklevel=2,
+                    )
                     continue
 
         if not all_data:
@@ -1191,6 +1204,96 @@ class Crossplot:
             # Add as artist to avoid replacing the primary legend
             self.ax.add_artist(self.regression_legend)
 
+    def _add_regressions_for_groups(
+        self,
+        data: pd.DataFrame,
+        group_column: str,
+        reg_type: str,
+        config: dict,
+        regression_colors: list[str],
+        color_idx: int,
+        regression_count: int,
+        total_points: int,
+        label_source: str | None = None,
+        name_template: str | None = None,
+    ) -> tuple[int, int]:
+        """
+        Add regression lines for each group in data.
+
+        Parameters
+        ----------
+        data : pd.DataFrame
+            Data with x, y columns and group_column.
+        group_column : str
+            Column to group by.
+        reg_type : str
+            Regression type string.
+        config : dict
+            Parsed regression config.
+        regression_colors : list[str]
+            Fallback color palette.
+        color_idx : int
+            Current index into regression_colors.
+        regression_count : int
+            Current total regression count.
+        total_points : int
+            Total data points for validation.
+        label_source : str or None
+            Discrete label source for display names ("color", "shape", etc.).
+        name_template : str or None
+            Format string for regression name, e.g. "well={group}".
+            If None, uses display label from label_source.
+
+        Returns
+        -------
+        tuple[int, int]
+            Updated (regression_count, color_idx).
+        """
+        groups = data.groupby(group_column)
+        n_groups = len(groups)
+
+        if regression_count + n_groups > total_points / 2:
+            raise ValueError(
+                f"Too many regression lines requested: {regression_count + n_groups} lines "
+                f"for {total_points} data points (average < 2 points per line). "
+                f"Reduce the number of groups or use a different regression strategy."
+            )
+
+        group_colors_map = self._get_group_colors(data, group_column)
+
+        for idx, (group_name, group_data) in enumerate(groups):
+            x_vals = group_data["x"].values
+            y_vals = group_data["y"].values
+            mask = np.isfinite(x_vals) & np.isfinite(y_vals)
+            if np.sum(mask) >= 2:
+                group_config = config.copy()
+                if "line_color" not in group_config:
+                    group_config["line_color"] = group_colors_map.get(
+                        group_name,
+                        regression_colors[color_idx % len(regression_colors)],
+                    )
+
+                if name_template:
+                    display_name = name_template.format(group=group_name)
+                elif label_source:
+                    display_name = self._get_display_label(group_name, label_source)
+                else:
+                    display_name = str(group_name)
+
+                is_last = idx == n_groups - 1
+                self._add_group_regression(
+                    x_vals[mask],
+                    y_vals[mask],
+                    reg_type,
+                    name=display_name,
+                    config=group_config,
+                    update_legend=is_last,
+                )
+                regression_count += 1
+                color_idx += 1
+
+        return regression_count, color_idx
+
     def _add_automatic_regressions(self, data: pd.DataFrame) -> None:
         """Add automatic regressions based on initialization parameters."""
         if not any(
@@ -1206,7 +1309,6 @@ class Crossplot:
         total_points = len(data)
         regression_count = 0
 
-        # Define colors for different regression lines
         regression_colors = [
             "red",
             "blue",
@@ -1226,7 +1328,6 @@ class Crossplot:
             config = self._parse_regression_config(self.regression)
             reg_type = config["type"]
 
-            # Set default line color if not specified
             if "line_color" not in config:
                 config["line_color"] = regression_colors[color_idx % len(regression_colors)]
 
@@ -1246,17 +1347,12 @@ class Crossplot:
             config = self._parse_regression_config(self.regression_by_color)
             reg_type = config["type"]
 
-            # Determine grouping column based on what's being used for colors in the plot
             group_column = None
-
             if self.color and "color_val" in data.columns:
-                # User specified explicit color mapping
                 group_column = "color_val"
             elif self.shape == "well" and "well" in data.columns:
-                # When shape="well", each well gets a different color in the plot
                 group_column = "well"
             elif self.shape and self.shape != "well" and "shape_val" in data.columns:
-                # When shape is a property, each shape group gets a different color
                 group_column = "shape_val"
 
             if group_column is None:
@@ -1265,157 +1361,45 @@ class Crossplot:
                     "Use color=<property>, shape='well', or shape=<property> parameter.",
                     stacklevel=2,
                 )
+            elif group_column == "color_val" and not self._is_categorical_color(
+                data[group_column].values
+            ):
+                warnings.warn(
+                    f"regression_by_color requires categorical color mapping, "
+                    f"but '{self.color}' is continuous. Use regression_by_group instead.",
+                    stacklevel=2,
+                )
             else:
-                # Check if color is categorical (not continuous like depth)
-                # Use _is_categorical_color() to properly handle discrete properties
-                if group_column == "color_val":
-                    is_categorical = self._is_categorical_color(data[group_column].values)
-                    if not is_categorical:
-                        # For continuous values, we can't create separate regressions
-                        warnings.warn(
-                            f"regression_by_color requires categorical color mapping, "
-                            f"but '{self.color}' is continuous. Use regression_by_group instead.",
-                            stacklevel=2,
-                        )
-                        # Skip this section
-                    else:
-                        # Categorical values - group and create regressions
-                        color_groups = data.groupby(group_column)
-                        n_groups = len(color_groups)
-
-                        # Validate regression count
-                        if regression_count + n_groups > total_points / 2:
-                            raise ValueError(
-                                f"Too many regression lines requested: {regression_count + n_groups} lines "
-                                f"for {total_points} data points (average < 2 points per line). "
-                                f"Reduce the number of groups or use a different regression strategy."
-                            )
-
-                        # Get the actual colors used for each group in the plot
-                        group_colors_map = self._get_group_colors(data, group_column)
-
-                        for idx, (group_name, group_data) in enumerate(color_groups):
-                            x_vals = group_data["x"].values
-                            y_vals = group_data["y"].values
-                            mask = np.isfinite(x_vals) & np.isfinite(y_vals)
-                            if np.sum(mask) >= 2:
-                                # Copy config and use the same color as the data group
-                                group_config = config.copy()
-                                if "line_color" not in group_config:
-                                    # Use the same color as the data points for this group
-                                    group_config["line_color"] = group_colors_map.get(
-                                        group_name,
-                                        regression_colors[color_idx % len(regression_colors)],
-                                    )
-
-                                # Get display label for group name (converts codes to formation names)
-                                group_display = self._get_display_label(group_name, "color")
-
-                                # Skip legend update for all but last regression
-                                is_last = idx == n_groups - 1
-                                self._add_group_regression(
-                                    x_vals[mask],
-                                    y_vals[mask],
-                                    reg_type,
-                                    name=group_display,
-                                    config=group_config,
-                                    update_legend=is_last,
-                                )
-                                regression_count += 1
-                                color_idx += 1
-                else:
-                    # Categorical values - group and create regressions
-                    color_groups = data.groupby(group_column)
-                    n_groups = len(color_groups)
-
-                    # Validate regression count
-                    if regression_count + n_groups > total_points / 2:
-                        raise ValueError(
-                            f"Too many regression lines requested: {regression_count + n_groups} lines "
-                            f"for {total_points} data points (average < 2 points per line). "
-                            f"Reduce the number of groups or use a different regression strategy."
-                        )
-
-                    # Get the actual colors used for each group in the plot
-                    group_colors_map = self._get_group_colors(data, group_column)
-
-                    for idx, (group_name, group_data) in enumerate(color_groups):
-                        x_vals = group_data["x"].values
-                        y_vals = group_data["y"].values
-                        mask = np.isfinite(x_vals) & np.isfinite(y_vals)
-                        if np.sum(mask) >= 2:
-                            # Copy config and use the same color as the data group
-                            group_config = config.copy()
-                            if "line_color" not in group_config:
-                                # Use the same color as the data points for this group
-                                group_config["line_color"] = group_colors_map.get(
-                                    group_name,
-                                    regression_colors[color_idx % len(regression_colors)],
-                                )
-
-                            # Get display label for group name (converts codes to formation names)
-                            group_display = self._get_display_label(group_name, "color")
-
-                            # Skip legend update for all but last regression
-                            is_last = idx == n_groups - 1
-                            self._add_group_regression(
-                                x_vals[mask],
-                                y_vals[mask],
-                                reg_type,
-                                name=group_display,
-                                config=group_config,
-                                update_legend=is_last,
-                            )
-                            regression_count += 1
-                            color_idx += 1
+                regression_count, color_idx = self._add_regressions_for_groups(
+                    data,
+                    group_column,
+                    reg_type,
+                    config,
+                    regression_colors,
+                    color_idx,
+                    regression_count,
+                    total_points,
+                    label_source="color",
+                )
 
         # Add regression by groups (well or shape)
         if self.regression_by_group:
             config = self._parse_regression_config(self.regression_by_group)
             reg_type = config["type"]
 
-            # Determine grouping
             if self.shape == "well" or (self.shape and "shape_val" in data.columns):
                 group_col = "well" if self.shape == "well" else "shape_val"
-                groups = data.groupby(group_col)
-                n_groups = len(groups)
-
-                # Validate regression count
-                if regression_count + n_groups > total_points / 2:
-                    raise ValueError(
-                        f"Too many regression lines requested: {regression_count + n_groups} lines "
-                        f"for {total_points} data points (average < 2 points per line). "
-                        f"Reduce the number of groups or use a different regression strategy."
-                    )
-
-                # Get the actual colors used for each group in the plot
-                group_colors_map = self._get_group_colors(data, group_col)
-
-                for idx, (group_name, group_data) in enumerate(groups):
-                    x_vals = group_data["x"].values
-                    y_vals = group_data["y"].values
-                    mask = np.isfinite(x_vals) & np.isfinite(y_vals)
-                    if np.sum(mask) >= 2:
-                        # Copy config and use the same color as the data group
-                        group_config = config.copy()
-                        if "line_color" not in group_config:
-                            # Use the same color as the data points for this group
-                            group_config["line_color"] = group_colors_map.get(
-                                group_name, regression_colors[color_idx % len(regression_colors)]
-                            )
-
-                        # Skip legend update for all but last regression
-                        is_last = idx == n_groups - 1
-                        self._add_group_regression(
-                            x_vals[mask],
-                            y_vals[mask],
-                            reg_type,
-                            name=f"{group_col}={group_name}",
-                            config=group_config,
-                            update_legend=is_last,
-                        )
-                        regression_count += 1
-                        color_idx += 1
+                regression_count, color_idx = self._add_regressions_for_groups(
+                    data,
+                    group_col,
+                    reg_type,
+                    config,
+                    regression_colors,
+                    color_idx,
+                    regression_count,
+                    total_points,
+                    name_template=f"{group_col}={{group}}",
+                )
             else:
                 warnings.warn(
                     "regression_by_group specified but no shape/well grouping defined. "
@@ -1428,24 +1412,19 @@ class Crossplot:
             config = self._parse_regression_config(self.regression_by_color_and_shape)
             reg_type = config["type"]
 
-            # Determine color and shape columns
             color_col = None
             shape_col = None
             color_label = None
             shape_label = None
 
-            # Identify color column
             if self.color and "color_val" in data.columns:
-                # Check if categorical
                 if self._is_categorical_color(data["color_val"].values):
                     color_col = "color_val"
                     color_label = self.color
             elif self.shape == "well" and "well" in data.columns:
-                # When shape="well", wells provide colors
                 color_col = "well"
                 color_label = "well"
 
-            # Identify shape column
             if self.shape == "well" and "well" in data.columns:
                 shape_col = "well"
                 shape_label = "well"
@@ -1453,33 +1432,33 @@ class Crossplot:
                 shape_col = "shape_val"
                 shape_label = self.shape
 
-            # Need both color and shape columns for this to work
             if color_col is None or shape_col is None:
                 warnings.warn(
-                    "regression_by_color_and_shape requires both categorical color mapping AND shape/well grouping. "
-                    "Set both color and shape parameters, or use regression_by_color or regression_by_group instead.",
+                    "regression_by_color_and_shape requires both categorical color mapping "
+                    "AND shape/well grouping. Set both color and shape parameters, or use "
+                    "regression_by_color or regression_by_group instead.",
                     stacklevel=2,
                 )
             elif color_col == shape_col:
                 warnings.warn(
                     "regression_by_color_and_shape requires DIFFERENT color and shape mappings. "
-                    "Currently both are mapped to the same property. Use regression_by_color or regression_by_group instead.",
+                    "Currently both are mapped to the same property. Use regression_by_color "
+                    "or regression_by_group instead.",
                     stacklevel=2,
                 )
             else:
-                # Group by both color and shape
+                # Group by both color and shape — can't use the shared helper directly
+                # because it groups by a single column
                 combined_groups = data.groupby([color_col, shape_col])
                 n_groups = len(combined_groups)
 
-                # Validate regression count
                 if regression_count + n_groups > total_points / 2:
                     raise ValueError(
-                        f"Too many regression lines requested: {regression_count + n_groups} lines "
-                        f"for {total_points} data points (average < 2 points per line). "
+                        f"Too many regression lines requested: {regression_count + n_groups} "
+                        f"lines for {total_points} data points (average < 2 points per line). "
                         f"Reduce the number of groups or use a simpler regression strategy."
                     )
 
-                # Get color maps for both dimensions
                 color_colors_map = self._get_group_colors(data, color_col)
                 shape_colors_map = self._get_group_colors(data, shape_col)
 
@@ -1488,23 +1467,20 @@ class Crossplot:
                     y_vals = group_data["y"].values
                     mask = np.isfinite(x_vals) & np.isfinite(y_vals)
                     if np.sum(mask) >= 2:
-                        # Copy config and use appropriate color
                         group_config = config.copy()
                         if "line_color" not in group_config:
-                            # Prefer color from color dimension, fallback to shape dimension
                             group_config["line_color"] = color_colors_map.get(
                                 color_val,
                                 shape_colors_map.get(
-                                    shape_val, regression_colors[color_idx % len(regression_colors)]
+                                    shape_val,
+                                    regression_colors[color_idx % len(regression_colors)],
                                 ),
                             )
 
-                        # Create descriptive name with both dimensions
                         color_display = self._get_display_label(color_val, "color")
                         shape_display = self._get_display_label(shape_val, "shape")
                         name = f"{color_label}={color_display}, {shape_label}={shape_display}"
 
-                        # Skip legend update for all but last regression
                         is_last = idx == n_groups - 1
                         self._add_group_regression(
                             x_vals[mask],

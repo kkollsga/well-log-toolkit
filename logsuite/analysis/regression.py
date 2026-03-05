@@ -129,15 +129,15 @@ class RegressionBase(ABC):
         return x_clean, y_clean
 
     def lock_params(self, **params: float) -> "RegressionBase":
-        """Lock one or more parameters to fixed values.
+        r"""Lock one or more parameters to fixed values.
 
         Locked parameters will not be optimized during fitting.
 
         Args:
-            **params: Parameter names and their locked values
+            \**params: Parameter names and their locked values.
 
         Returns:
-            Self for method chaining
+            Self for method chaining.
 
         Example:
             >>> reg = LinearRegression()
@@ -148,13 +148,13 @@ class RegressionBase(ABC):
         return self
 
     def unlock_params(self, *param_names: str) -> "RegressionBase":
-        """Unlock one or more parameters.
+        r"""Unlock one or more parameters.
 
         Args:
-            *param_names: Names of parameters to unlock. If none provided, unlocks all.
+            \*param_names: Names of parameters to unlock. If none provided, unlocks all.
 
         Returns:
-            Self for method chaining
+            Self for method chaining.
 
         Example:
             >>> reg.unlock_params('slope')  # Unlock specific parameter
@@ -191,17 +191,24 @@ class RegressionBase(ABC):
     ) -> tuple[np.ndarray, np.ndarray]:
         """Get x and y data for plotting the regression line.
 
-        Args:
-            x_range: Optional tuple of (x_min, x_max) for the plot range.
-                    If None, uses the stored x_range from fitting.
-                    If stored x_range is also None, raises an error.
-            num_points: Number of points to generate for the line. Default: 100
+        Parameters
+        ----------
+        x_range : tuple[float, float], optional
+            Tuple of (x_min, x_max) for the plot range.
+            If None, uses the stored x_range from fitting.
+            If stored x_range is also None, raises an error.
+        num_points : int, default 100
+            Number of points to generate for the line.
 
-        Returns:
-            Tuple of (x_values, y_values) for plotting
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            Tuple of (x_values, y_values) for plotting.
 
-        Raises:
-            ValueError: If model is not fitted or x_range cannot be determined
+        Raises
+        ------
+        ValueError
+            If model is not fitted or x_range cannot be determined.
         """
         if not self.fitted:
             raise ValueError("Model must be fitted before generating plot data")

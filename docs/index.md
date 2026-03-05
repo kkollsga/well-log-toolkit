@@ -50,13 +50,6 @@ user-guide/multi-well
 :caption: API Reference
 
 api/index
-api/core
-api/io
-api/statistics
-api/regression
-api/visualization
-api/manager
-api/exceptions
 ```
 
 ```{toctree}

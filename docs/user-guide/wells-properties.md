@@ -8,7 +8,7 @@ A `Well` contains multiple `Property` objects on potentially different depth gri
 well = manager.well_12_3_2_B
 
 # List properties
-print(well.property_names)
+print(well.properties)
 
 # Access by attribute
 phie = well.PHIE

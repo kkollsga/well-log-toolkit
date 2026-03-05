@@ -3,15 +3,17 @@
 ## Well
 
 ```{eval-rst}
-.. autoclass:: logsuite.Well
+.. autoclass:: logsuite.core.well.Well
    :members:
    :undoc-members:
+   :no-index:
 ```
 
 ## Property
 
 ```{eval-rst}
-.. autoclass:: logsuite.Property
+.. autoclass:: logsuite.core.property.Property
    :members:
    :undoc-members:
+   :no-index:
 ```

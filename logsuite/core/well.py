@@ -15,7 +15,7 @@ from .property import Property
 
 if TYPE_CHECKING:
     from ..manager import WellDataManager
-    from ..visualization import Template, WellView
+    from ..visualization import Crossplot, Template, WellView
 
 
 class SourceView:
@@ -169,26 +169,26 @@ class Well:
     Parameters
     ----------
     name : str
-        Original well name (from LAS file)
+        Original well name (from LAS file).
     sanitized_name : str
-        Pythonic attribute name for parent manager access
+        Pythonic attribute name for parent manager access.
     parent_manager : WellDataManager, optional
-        Parent manager reference
+        Parent manager reference.
 
     Attributes
     ----------
     name : str
-        Original well name
+        Original well name.
     sanitized_name : str
-        Sanitized name for attribute access
-    parent_manager : Optional[WellDataManager]
-        Parent manager
+        Sanitized name for attribute access.
+    parent_manager : WellDataManager, optional
+        Parent manager.
     properties : list[str]
-        List of unique property names across all sources
+        List of unique property names across all sources.
     sources : list[str]
-        List of source names (sanitized from LAS file names)
-    original_las : LasFile | None
-        First LAS file loaded (for template-based export)
+        List of source names (sanitized from LAS file names).
+    original_las : LasFile, optional
+        First LAS file loaded (for template-based export).
 
     Examples
     --------
@@ -1669,6 +1669,7 @@ class Well:
         ----------
         method : {'match', 'resample', 'concat'}, default 'match'
             Merge method:
+
             - 'match': Use first source's depth grid as reference. Continuous properties
               must have exact depth match (errors otherwise). Discrete properties are
               automatically resampled using interval logic, since they define depth
@@ -1792,6 +1793,7 @@ class Well:
             Can be a single string or a list of strings.
         merge_method : {'match', 'resample', 'concat'}, default 'match'
             Method to align properties to reference depth grid:
+
             - 'match': Require exact depth match for continuous properties (errors if
               not aligned). Discrete properties are automatically resampled using
               interval logic. Safest option.
@@ -2235,8 +2237,8 @@ class Well:
 
         Parameters
         ----------
-        folder_path : Union[str, Path]
-            Folder path containing the source LAS files
+        folder_path : str or Path
+            Folder path containing the source LAS files.
 
         Examples
         --------
@@ -2274,8 +2276,8 @@ class Well:
 
         Parameters
         ----------
-        folder_path : Union[str, Path]
-            Folder path containing the source LAS files
+        folder_path : str or Path
+            Folder path containing the source LAS files.
 
         Examples
         --------
@@ -2311,7 +2313,7 @@ class Well:
 
         Parameters
         ----------
-        folder_path : Union[str, Path]
+        folder_path : str or Path
             Folder path to export LAS files to. Will be created if it doesn't exist.
 
         Examples

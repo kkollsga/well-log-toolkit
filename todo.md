@@ -548,3 +548,27 @@ Step 4 (Changelog) ──────────────┘
 | 8. Error Messages | 6 | Medium | No (additive) |
 | 9. Performance | 5 | Medium | No (same behavior, faster) |
 | 10. LAS 3.0 + Extensions | 8+ | High | No (additive) |
+
+---
+
+## Future: Analysis Gaps
+
+- [ ] Cutoff/flag operations — create net pay flags from cutoffs (PHIE > 0.08 AND SW < 0.5) as a first-class workflow
+- [ ] Volumetrics — STOIIP/GIIP calculations (building blocks exist: thickness, porosity, saturation)
+- [ ] Log normalization — histogram equalization or shifting between wells
+- [ ] Missing data interpolation — gap-filling methods beyond resample()
+- [ ] Variance/covariance — raw variance, covariance matrix, correlation coefficients
+- [ ] Confidence intervals on regressions — prediction bands, standard errors
+- [ ] Residual access — inspect regression residuals for diagnostics
+
+## Future: Ecosystem
+
+- [ ] DLIS/LIS support — common in modern workflows, currently LAS-only
+- [ ] CSV/Excel direct import — reduce friction for non-LAS data
+- [ ] Wrapped LAS support — currently WRAP=NO required
+- [ ] Well header editing — read-only today, no API to modify/export well metadata
+- [ ] Pandas integration beyond .data() — .to_dataframe() on Manager, DataFrame indexing on wells
+- [ ] Cloud/database backends — S3, database support (currently file-based only)
+- [ ] Plugin/extension system — custom property types, statistics, track renderers
+- [ ] CLI tool — `logsuite info`, `logsuite convert`, etc.
+- [ ] Interactive visualization — ipywidgets, Plotly, or Bokeh for exploration

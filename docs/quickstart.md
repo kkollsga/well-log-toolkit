@@ -12,7 +12,7 @@ manager.load_las("12_3-2_B.las")
 
 # Access wells by sanitized name
 well = manager.well_12_3_2_B
-print(well.property_names)
+print(well.properties)
 ```
 
 ## Working with Properties
@@ -58,12 +58,16 @@ from logsuite import Template, WellView
 
 # Define track layout
 template = Template()
-template.add_track("Porosity", width=2)
-template.add_curve("Porosity", "PHIE", color="blue")
+template.add_track(
+    track_type="continuous",
+    logs=[{"name": "PHIE", "color": "blue", "x_range": [0, 0.4]}],
+    title="Porosity",
+    width=2,
+)
 
 # Create well view
-view = WellView(well, template)
-view.plot()
+view = WellView(well, template=template)
+view.show()
 ```
 
 ## Next Steps

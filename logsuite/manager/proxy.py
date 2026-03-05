@@ -13,6 +13,7 @@ import pandas as pd
 from ..analysis.sums_avg import SumsAvgResult, _flatten_to_dataframe, _sanitize_for_json
 from ..core.property import Property
 from ..exceptions import PropertyNotFoundError, PropertyTypeError
+from ..utils import suggest_similar_names
 
 if TYPE_CHECKING:
     from .data_manager import WellDataManager
@@ -45,6 +46,13 @@ class _ManagerPropertyProxy:
         self._custom_intervals = (
             custom_intervals  # For filter_intervals: str (saved name) or dict (well-specific)
         )
+        self._cache: dict = {}
+
+    def _cached(self, key: tuple, compute):
+        """Return cached result or compute, cache, and return."""
+        if key not in self._cache:
+            self._cache[key] = compute()
+        return self._cache[key]
 
     def _apply_operation(self, prop: Property):
         """Apply stored operation to a property."""
@@ -483,6 +491,10 @@ class _ManagerPropertyProxy:
         0  well_A  Zone_1     0.05
         1  well_A  Zone_2     0.08
         """
+        cache_key = ("min", nested, return_df)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         # If filters are applied, use grouped statistics
         if self._filters:
             result = {}
@@ -498,20 +510,21 @@ class _ManagerPropertyProxy:
             result = _sanitize_for_json(result)
             self._warn_skipped_wells(result)
             if return_df and result:
-                return _flatten_to_dataframe(result, self._property_name)
-            return result
+                result = _flatten_to_dataframe(result, self._property_name)
+        else:
+            # No filters - compute single min per well
+            result = {}
+            for well_name, well in self._manager._wells.items():
+                value = self._compute_for_well(well, lambda prop: prop.min(), nested=nested)
+                if value is not None:
+                    result[well_name] = value
 
-        # No filters - compute single min per well
-        result = {}
-        for well_name, well in self._manager._wells.items():
-            value = self._compute_for_well(well, lambda prop: prop.min(), nested=nested)
-            if value is not None:
-                result[well_name] = value
+            result = _sanitize_for_json(result)
+            self._warn_skipped_wells(result)
+            if return_df and result and any(isinstance(v, dict) for v in result.values()):
+                result = _flatten_to_dataframe(result, self._property_name)
 
-        result = _sanitize_for_json(result)
-        self._warn_skipped_wells(result)
-        if return_df and result and any(isinstance(v, dict) for v in result.values()):
-            return _flatten_to_dataframe(result, self._property_name)
+        self._cache[cache_key] = result
         return result
 
     def max(self, nested: bool = False, return_df: bool = False):
@@ -549,6 +562,10 @@ class _ManagerPropertyProxy:
         0  well_A  Zone_1     0.35
         1  well_A  Zone_2     0.42
         """
+        cache_key = ("max", nested, return_df)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         # If filters are applied, use grouped statistics
         if self._filters:
             result = {}
@@ -564,20 +581,21 @@ class _ManagerPropertyProxy:
             result = _sanitize_for_json(result)
             self._warn_skipped_wells(result)
             if return_df and result:
-                return _flatten_to_dataframe(result, self._property_name)
-            return result
+                result = _flatten_to_dataframe(result, self._property_name)
+        else:
+            # No filters - compute single max per well
+            result = {}
+            for well_name, well in self._manager._wells.items():
+                value = self._compute_for_well(well, lambda prop: prop.max(), nested=nested)
+                if value is not None:
+                    result[well_name] = value
 
-        # No filters - compute single max per well
-        result = {}
-        for well_name, well in self._manager._wells.items():
-            value = self._compute_for_well(well, lambda prop: prop.max(), nested=nested)
-            if value is not None:
-                result[well_name] = value
+            result = _sanitize_for_json(result)
+            self._warn_skipped_wells(result)
+            if return_df and result and any(isinstance(v, dict) for v in result.values()):
+                result = _flatten_to_dataframe(result, self._property_name)
 
-        result = _sanitize_for_json(result)
-        self._warn_skipped_wells(result)
-        if return_df and result and any(isinstance(v, dict) for v in result.values()):
-            return _flatten_to_dataframe(result, self._property_name)
+        self._cache[cache_key] = result
         return result
 
     def mean(self, weighted: bool = True, nested: bool = False, return_df: bool = False):
@@ -623,6 +641,10 @@ class _ManagerPropertyProxy:
         std : Compute standard deviation across wells.
         sums_avg : Compute full grouped statistics.
         """
+        cache_key = ("mean", weighted, nested, return_df)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         # If filters are applied, use grouped statistics
         if self._filters:
             result = {}
@@ -642,23 +664,23 @@ class _ManagerPropertyProxy:
             result = _sanitize_for_json(result)
             self._warn_skipped_wells(result)
             if return_df and result:
-                return _flatten_to_dataframe(result, self._property_name)
-            return result
+                result = _flatten_to_dataframe(result, self._property_name)
+        else:
+            # No filters - compute single mean per well
+            result = {}
+            for well_name, well in self._manager._wells.items():
+                value = self._compute_for_well(
+                    well, lambda prop: prop.mean(weighted=weighted), nested=nested
+                )
+                if value is not None:
+                    result[well_name] = value
 
-        # No filters - compute single mean per well
-        result = {}
-        for well_name, well in self._manager._wells.items():
-            value = self._compute_for_well(
-                well, lambda prop: prop.mean(weighted=weighted), nested=nested
-            )
-            if value is not None:
-                result[well_name] = value
+            result = _sanitize_for_json(result)
+            self._warn_skipped_wells(result)
+            if return_df and result and any(isinstance(v, dict) for v in result.values()):
+                result = _flatten_to_dataframe(result, self._property_name)
 
-        result = _sanitize_for_json(result)
-        self._warn_skipped_wells(result)
-        if return_df and result and any(isinstance(v, dict) for v in result.values()):
-            # Only convert to DF if there's nesting (ambiguous properties or nested=True)
-            return _flatten_to_dataframe(result, self._property_name)
+        self._cache[cache_key] = result
         return result
 
     def std(self, weighted: bool = True, nested: bool = False, return_df: bool = False):
@@ -699,6 +721,10 @@ class _ManagerPropertyProxy:
         0  well_A  Zone_1     0.035
         1  well_A  Zone_2     0.048
         """
+        cache_key = ("std", weighted, nested, return_df)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         # If filters are applied, use grouped statistics
         if self._filters:
             result = {}
@@ -718,22 +744,23 @@ class _ManagerPropertyProxy:
             result = _sanitize_for_json(result)
             self._warn_skipped_wells(result)
             if return_df and result:
-                return _flatten_to_dataframe(result, self._property_name)
-            return result
+                result = _flatten_to_dataframe(result, self._property_name)
+        else:
+            # No filters - compute single std per well
+            result = {}
+            for well_name, well in self._manager._wells.items():
+                value = self._compute_for_well(
+                    well, lambda prop: prop.std(weighted=weighted), nested=nested
+                )
+                if value is not None:
+                    result[well_name] = value
 
-        # No filters - compute single std per well
-        result = {}
-        for well_name, well in self._manager._wells.items():
-            value = self._compute_for_well(
-                well, lambda prop: prop.std(weighted=weighted), nested=nested
-            )
-            if value is not None:
-                result[well_name] = value
+            result = _sanitize_for_json(result)
+            self._warn_skipped_wells(result)
+            if return_df and result and any(isinstance(v, dict) for v in result.values()):
+                result = _flatten_to_dataframe(result, self._property_name)
 
-        result = _sanitize_for_json(result)
-        self._warn_skipped_wells(result)
-        if return_df and result and any(isinstance(v, dict) for v in result.values()):
-            return _flatten_to_dataframe(result, self._property_name)
+        self._cache[cache_key] = result
         return result
 
     def percentile(
@@ -785,6 +812,10 @@ class _ManagerPropertyProxy:
         0  well_A  Zone_1     0.17
         1  well_A  Zone_2     0.22
         """
+        cache_key = ("percentile", p, weighted, nested, return_df)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         # If filters are applied, use grouped statistics (like sums_avg)
         if self._filters:
             result = {}
@@ -799,7 +830,6 @@ class _ManagerPropertyProxy:
                     nested=nested,
                 )
                 if well_result is not None:
-                    # Extract just the requested percentile from the grouped results
                     extracted = self._extract_statistic_from_grouped(
                         well_result, "percentile", percentile_key=percentile_key
                     )
@@ -809,22 +839,23 @@ class _ManagerPropertyProxy:
             result = _sanitize_for_json(result)
             self._warn_skipped_wells(result)
             if return_df and result:
-                return _flatten_to_dataframe(result, self._property_name)
-            return result
+                result = _flatten_to_dataframe(result, self._property_name)
+        else:
+            # No filters - compute single percentile per well
+            result = {}
+            for well_name, well in self._manager._wells.items():
+                value = self._compute_for_well(
+                    well, lambda prop: prop.percentile(p, weighted=weighted), nested=nested
+                )
+                if value is not None:
+                    result[well_name] = value
 
-        # No filters - compute single percentile per well
-        result = {}
-        for well_name, well in self._manager._wells.items():
-            value = self._compute_for_well(
-                well, lambda prop: prop.percentile(p, weighted=weighted), nested=nested
-            )
-            if value is not None:
-                result[well_name] = value
+            result = _sanitize_for_json(result)
+            self._warn_skipped_wells(result)
+            if return_df and result and any(isinstance(v, dict) for v in result.values()):
+                result = _flatten_to_dataframe(result, self._property_name)
 
-        result = _sanitize_for_json(result)
-        self._warn_skipped_wells(result)
-        if return_df and result and any(isinstance(v, dict) for v in result.values()):
-            return _flatten_to_dataframe(result, self._property_name)
+        self._cache[cache_key] = result
         return result
 
     def median(self, weighted: bool = True, nested: bool = False, return_df: bool = False):
@@ -865,6 +896,10 @@ class _ManagerPropertyProxy:
         0  well_A  Zone_1     0.17
         1  well_A  Zone_2     0.21
         """
+        cache_key = ("median", weighted, nested, return_df)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         # If filters are applied, use grouped statistics (median = p50)
         if self._filters:
             result = {}
@@ -884,22 +919,23 @@ class _ManagerPropertyProxy:
             result = _sanitize_for_json(result)
             self._warn_skipped_wells(result)
             if return_df and result:
-                return _flatten_to_dataframe(result, self._property_name)
-            return result
+                result = _flatten_to_dataframe(result, self._property_name)
+        else:
+            # No filters - compute single median per well
+            result = {}
+            for well_name, well in self._manager._wells.items():
+                value = self._compute_for_well(
+                    well, lambda prop: prop.median(weighted=weighted), nested=nested
+                )
+                if value is not None:
+                    result[well_name] = value
 
-        # No filters - compute single median per well
-        result = {}
-        for well_name, well in self._manager._wells.items():
-            value = self._compute_for_well(
-                well, lambda prop: prop.median(weighted=weighted), nested=nested
-            )
-            if value is not None:
-                result[well_name] = value
+            result = _sanitize_for_json(result)
+            self._warn_skipped_wells(result)
+            if return_df and result and any(isinstance(v, dict) for v in result.values()):
+                result = _flatten_to_dataframe(result, self._property_name)
 
-        result = _sanitize_for_json(result)
-        self._warn_skipped_wells(result)
-        if return_df and result and any(isinstance(v, dict) for v in result.values()):
-            return _flatten_to_dataframe(result, self._property_name)
+        self._cache[cache_key] = result
         return result
 
     def mode(
@@ -946,6 +982,10 @@ class _ManagerPropertyProxy:
         0  well_A  Zone_1     0.16
         1  well_A  Zone_2     0.20
         """
+        cache_key = ("mode", weighted, bins, nested, return_df)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         # If filters are applied, use grouped statistics
         if self._filters:
             result = {}
@@ -965,22 +1005,23 @@ class _ManagerPropertyProxy:
             result = _sanitize_for_json(result)
             self._warn_skipped_wells(result)
             if return_df and result:
-                return _flatten_to_dataframe(result, self._property_name)
-            return result
+                result = _flatten_to_dataframe(result, self._property_name)
+        else:
+            # No filters - compute single mode per well
+            result = {}
+            for well_name, well in self._manager._wells.items():
+                value = self._compute_for_well(
+                    well, lambda prop: prop.mode(weighted=weighted, bins=bins), nested=nested
+                )
+                if value is not None:
+                    result[well_name] = value
 
-        # No filters - compute single mode per well
-        result = {}
-        for well_name, well in self._manager._wells.items():
-            value = self._compute_for_well(
-                well, lambda prop: prop.mode(weighted=weighted, bins=bins), nested=nested
-            )
-            if value is not None:
-                result[well_name] = value
+            result = _sanitize_for_json(result)
+            self._warn_skipped_wells(result)
+            if return_df and result and any(isinstance(v, dict) for v in result.values()):
+                result = _flatten_to_dataframe(result, self._property_name)
 
-        result = _sanitize_for_json(result)
-        self._warn_skipped_wells(result)
-        if return_df and result and any(isinstance(v, dict) for v in result.values()):
-            return _flatten_to_dataframe(result, self._property_name)
+        self._cache[cache_key] = result
         return result
 
     def stats(self, methods=None, weighted: bool = True, return_df: bool = False):
@@ -1134,7 +1175,40 @@ class _ManagerPropertyProxy:
         >>> # Multiple filters (chained)
         >>> manager.PHIE.filter("Well_Tops").filter("NetSand_2025").sums_avg()
         >>> # Returns statistics grouped by Well_Tops then NetSand_2025
+        Raises
+        ------
+        PropertyNotFoundError
+            If no well in the manager has the named property.
+        PropertyTypeError
+            If the property exists but is not discrete in any well.
         """
+        # Validate that the filter property exists and is discrete in at least one well
+        found_in_any = False
+        discrete_in_any = False
+        all_property_names: set[str] = set()
+
+        for well in self._manager._wells.values():
+            for source_data in well._sources.values():
+                for pname, prop in source_data["properties"].items():
+                    all_property_names.add(pname)
+                    if pname == property_name:
+                        found_in_any = True
+                        if prop.type == "discrete":
+                            discrete_in_any = True
+
+        if not found_in_any:
+            suggestions = suggest_similar_names(property_name, all_property_names)
+            msg = f"Filter property '{property_name}' not found in any well."
+            if suggestions:
+                msg += f" Did you mean: {', '.join(suggestions)}?"
+            raise PropertyNotFoundError(msg)
+
+        if not discrete_in_any:
+            raise PropertyTypeError(
+                f"Filter property '{property_name}' exists but is not discrete in any well. "
+                f"Set the property type first: well.get_property('{property_name}').type = 'discrete'"
+            )
+
         # Create new filter list with this filter added
         new_filters = self._filters + [(property_name, insert_boundaries)]
 
@@ -1371,6 +1445,10 @@ class _ManagerPropertyProxy:
                 "Use .filter('property_name') or .filter_intervals(...) before calling sums_avg()"
             )
 
+        cache_key = ("sums_avg", weighted, arithmetic, precision, nested)
+        if cache_key in self._cache:
+            return self._cache[cache_key]
+
         result = {}
 
         for well_name, well in self._manager._wells.items():
@@ -1380,7 +1458,90 @@ class _ManagerPropertyProxy:
             if well_result is not None:
                 result[well_name] = well_result
 
-        return SumsAvgResult(_sanitize_for_json(result))
+        result = SumsAvgResult(_sanitize_for_json(result))
+        self._cache[cache_key] = result
+        return result
+
+    def _compute_property_sums_avg(
+        self,
+        well,
+        source_name: str | None,
+        weighted: bool | None,
+        arithmetic: bool | None,
+        precision: int,
+    ) -> dict | None:
+        """
+        Compute sums_avg for a property in a single source.
+
+        Parameters
+        ----------
+        well : Well
+            Well to compute statistics for.
+        source_name : str or None
+            Source name to get property from. None for default (unique) lookup.
+        weighted : bool or None
+            Whether to use depth-weighted statistics.
+        arithmetic : bool or None
+            Whether to include arithmetic statistics.
+        precision : int
+            Decimal precision for results.
+
+        Returns
+        -------
+        dict or None
+            Grouped statistics, or None if property/filter not available.
+        """
+        prop = well.get_property(self._property_name, source=source_name)
+        prop = self._apply_operation(prop)
+
+        prop = self._apply_filter_intervals(prop, well)
+        if prop is None:
+            return None
+
+        for filter_name, insert_boundaries in self._filters:
+            kwargs = {"source": source_name} if source_name else {}
+            if insert_boundaries is not None:
+                prop = prop.filter(filter_name, insert_boundaries=insert_boundaries, **kwargs)
+            else:
+                prop = prop.filter(filter_name, **kwargs)
+
+        result = prop.sums_avg(weighted=weighted, arithmetic=arithmetic, precision=precision)
+
+        if self._custom_intervals and result:
+            well_thickness = 0.0
+            for _key, value in result.items():
+                if isinstance(value, dict) and "thickness" in value:
+                    well_thickness += value["thickness"]
+            if well_thickness > 0:
+                result["thickness"] = round(well_thickness, precision)
+
+        return result
+
+    def _compute_per_source(
+        self,
+        well,
+        weighted: bool | None,
+        arithmetic: bool | None,
+        precision: int,
+    ) -> dict | None:
+        """Compute sums_avg for each source in a well, skipping failures."""
+        source_results = {}
+        for source_name in well._sources:
+            try:
+                result = self._compute_property_sums_avg(
+                    well, source_name, weighted, arithmetic, precision
+                )
+                if result is not None:
+                    source_results[source_name] = result
+            except (
+                PropertyNotFoundError,
+                PropertyTypeError,
+                AttributeError,
+                KeyError,
+                ValueError,
+            ):
+                pass
+        return source_results if source_results else None
 
     def _compute_sums_avg_for_well(
         self,
@@ -1396,149 +1557,15 @@ class _ManagerPropertyProxy:
         Applies all filters and computes grouped statistics.
         """
         if nested:
-            # Force full nesting - compute for each source
-            source_results = {}
+            return self._compute_per_source(well, weighted, arithmetic, precision)
 
-            for source_name in well._sources.keys():
-                try:
-                    # Get property from this source
-                    prop = well.get_property(self._property_name, source=source_name)
-                    prop = self._apply_operation(prop)
-
-                    # Apply filter_intervals if set
-                    prop = self._apply_filter_intervals(prop, well)
-                    if prop is None:
-                        continue  # Well doesn't have the saved intervals
-
-                    # Apply all filters (specify source to avoid ambiguity)
-                    # If a filter doesn't exist, PropertyNotFoundError will be raised and caught below
-                    for filter_name, insert_boundaries in self._filters:
-                        if insert_boundaries is not None:
-                            prop = prop.filter(
-                                filter_name, insert_boundaries=insert_boundaries, source=source_name
-                            )
-                        else:
-                            prop = prop.filter(filter_name, source=source_name)
-
-                    # Compute sums_avg
-                    result = prop.sums_avg(
-                        weighted=weighted, arithmetic=arithmetic, precision=precision
-                    )
-
-                    # Add well-level thickness for this source if using filter_intervals
-                    if self._custom_intervals and result:
-                        well_thickness = 0.0
-                        for _key, value in result.items():
-                            if isinstance(value, dict) and "thickness" in value:
-                                well_thickness += value["thickness"]
-                        if well_thickness > 0:
-                            result["thickness"] = round(well_thickness, precision)
-
-                    source_results[source_name] = result
-
-                except (
-                    PropertyNotFoundError,
-                    PropertyTypeError,
-                    AttributeError,
-                    KeyError,
-                    ValueError,
-                ):
-                    # Property or filter doesn't exist in this source, or filter isn't discrete - skip it
-                    pass
-
-            return source_results if source_results else None
-
-        # Default behavior (nested=False)
+        # Default behavior (nested=False) — try unique property first
         try:
-            # Try to get property without specifying source (unique case)
-            prop = well.get_property(self._property_name)
-            prop = self._apply_operation(prop)
-
-            # Apply filter_intervals if set
-            prop = self._apply_filter_intervals(prop, well)
-            if prop is None:
-                return None  # Well doesn't have the saved intervals
-
-            # Apply all filters
-            for filter_name, insert_boundaries in self._filters:
-                if insert_boundaries is not None:
-                    prop = prop.filter(filter_name, insert_boundaries=insert_boundaries)
-                else:
-                    prop = prop.filter(filter_name)
-
-            # Compute sums_avg
-            result = prop.sums_avg(weighted=weighted, arithmetic=arithmetic, precision=precision)
-
-            # Add well-level thickness (sum of all zone thicknesses) if using filter_intervals
-            if self._custom_intervals and result:
-                well_thickness = 0.0
-                for _key, value in result.items():
-                    if isinstance(value, dict) and "thickness" in value:
-                        well_thickness += value["thickness"]
-                if well_thickness > 0:
-                    result["thickness"] = round(well_thickness, precision)
-
-            return result
-
+            return self._compute_property_sums_avg(well, None, weighted, arithmetic, precision)
         except PropertyNotFoundError as e:
-            # Check if it's ambiguous (exists in multiple sources)
             if "ambiguous" in str(e).lower():
-                # Property exists in multiple sources - compute for each
-                source_results = {}
-
-                for source_name in well._sources.keys():
-                    try:
-                        prop = well.get_property(self._property_name, source=source_name)
-                        prop = self._apply_operation(prop)
-
-                        # Apply filter_intervals if set
-                        prop = self._apply_filter_intervals(prop, well)
-                        if prop is None:
-                            continue  # Well doesn't have the saved intervals
-
-                        # Apply all filters (specify source to avoid ambiguity)
-                        # If a filter doesn't exist, PropertyNotFoundError will be raised and caught below
-                        for filter_name, insert_boundaries in self._filters:
-                            if insert_boundaries is not None:
-                                prop = prop.filter(
-                                    filter_name,
-                                    insert_boundaries=insert_boundaries,
-                                    source=source_name,
-                                )
-                            else:
-                                prop = prop.filter(filter_name, source=source_name)
-
-                        # Compute sums_avg
-                        result = prop.sums_avg(
-                            weighted=weighted, arithmetic=arithmetic, precision=precision
-                        )
-
-                        # Add well-level thickness for this source if using filter_intervals
-                        if self._custom_intervals and result:
-                            well_thickness = 0.0
-                            for _key, value in result.items():
-                                if isinstance(value, dict) and "thickness" in value:
-                                    well_thickness += value["thickness"]
-                            if well_thickness > 0:
-                                result["thickness"] = round(well_thickness, precision)
-
-                        source_results[source_name] = result
-
-                    except (
-                        PropertyNotFoundError,
-                        PropertyTypeError,
-                        AttributeError,
-                        KeyError,
-                        ValueError,
-                    ):
-                        # Property or filter doesn't exist in this source, or filter isn't discrete - skip it
-                        pass
-
-                return source_results if source_results else None
-            else:
-                # Property truly not found in this well
-                return None
-
+                return self._compute_per_source(well, weighted, arithmetic, precision)
+            return None
         except (AttributeError, KeyError):
             return None
 

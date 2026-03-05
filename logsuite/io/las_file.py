@@ -42,16 +42,13 @@ class LasFile:
         Parameter section data (includes discrete property markers and labels)
     curves : dict
         Curve metadata: {name: {unit, description, type, alias, multiplier}}
-
-    Properties
-    ----------
     discrete_properties : list[str]
-        List of properties marked as discrete in ~Parameter section
+        List of properties marked as discrete in ``~Parameter`` section.
+        (Read-only property.)
 
-    Methods
-    -------
-    get_discrete_labels(property_name: str) -> dict[int, str] | None
-        Extract label mappings for a discrete property
+    See Also
+    --------
+    get_discrete_labels : Extract label mappings for a discrete property.
 
     Examples
     --------
@@ -101,6 +98,30 @@ class LasFile:
         if not _from_dataframe:
             self._parse_headers()
             self._validate_version()
+
+    @classmethod
+    def open(cls, filepath: str | Path) -> "LasFile":
+        """
+        Open a LAS file, auto-detecting version (2.0 or 3.0).
+
+        This is a convenience alias for ``LasFile(filepath)``.
+
+        Parameters
+        ----------
+        filepath : Union[str, Path]
+            Path to LAS file
+
+        Returns
+        -------
+        LasFile
+            Parsed LAS file with headers loaded
+
+        Examples
+        --------
+        >>> las = LasFile.open("well.las")
+        >>> print(las.well_name)
+        """
+        return cls(filepath)
 
     @classmethod
     def from_dataframe(
@@ -789,7 +810,7 @@ class LasFile:
         Parameters
         ----------
         updates : dict[str, dict]
-            {curve_name: {attr: value, ...}, ...}
+            Mapping of ``{curve_name: {attr: value, ...}, ...}``.
 
         Examples
         --------
@@ -964,9 +985,10 @@ class LasFile:
         discrete_styles: dict[str, dict[int, str]] | None = None,
         discrete_thicknesses: dict[str, dict[int, float]] | None = None,
         template_las: Optional["LasFile"] = None,
+        version: str = "2.0",
     ) -> None:
         """
-        Export DataFrame to LAS 2.0 format file.
+        Export DataFrame to LAS format file.
 
         Parameters
         ----------
@@ -992,8 +1014,10 @@ class LasFile:
         template_las : LasFile, optional
             Source LAS file to use as template. Preserves original ~Version info,
             ~Well parameters (excluding STRT/STOP/STEP/NULL), and ~Parameter entries
-            not related to discrete labels and colors. This prevents data erosion when updating
-            existing LAS files.
+            not related to discrete labels and colors.
+        version : str, default "2.0"
+            LAS version to export ("2.0" or "3.0").
+            LAS 3.0 uses tab-separated data and different section names.
 
         Raises
         ------
@@ -1038,6 +1062,7 @@ class LasFile:
 
         unit_mappings = unit_mappings or {}
         filepath = Path(filepath)
+        is_v3 = version in ("3.0", "3")
 
         # Get depth range
         dept = df["DEPT"].dropna()
@@ -1051,18 +1076,20 @@ class LasFile:
         # Build LAS file content
         lines = []
 
-        # ~Version section (use template if available)
+        # ~Version section
         lines.append("~Version Information")
-        if template_las:
-            # Preserve original version info
+        template_version_matches = template_las and template_las._las_version.startswith(version[0])
+        if template_version_matches:
+            # Preserve original version info when not switching versions
             version_info = template_las.version_info
             for key, value in version_info.items():
                 desc = f"CWLS log ASCII Standard -VERSION {value}" if key == "VERS" else ""
                 lines.append(f" {key:<12}.              {value:>10} : {desc}")
         else:
-            # Default version info
+            ver_str = "3.0" if is_v3 else "2.0"
             lines.append(
-                " VERS.                          2.0 : CWLS log ASCII Standard -VERSION 2.0"
+                f" VERS.                          {ver_str} :"
+                f" CWLS log ASCII Standard -VERSION {ver_str}"
             )
             lines.append(" WRAP.                          NO  : One line per depth step")
         lines.append("")
@@ -1087,8 +1114,8 @@ class LasFile:
             lines.append(f" WELL.                   {well_name:>10} : WELL")
         lines.append("")
 
-        # ~Curve section (preserve template descriptions if available)
-        lines.append("~Curve Information")
+        # ~Curve / ~Log_Definition section
+        lines.append("~Log_Definition" if is_v3 else "~Curve Information")
         for col in df.columns:
             unit = unit_mappings.get(col, "")
             # Try to get description from template
@@ -1221,42 +1248,47 @@ class LasFile:
                 lines.append(f" {param_name:<12}.       {param_value:>10} : {param_desc}")
             lines.append("")
 
-        # ~Ascii section
-        lines.append("~Ascii")
+        # ~Ascii / ~Log_Data section
+        lines.append("~Log_Data | Log_Data" if is_v3 else "~Ascii")
 
         # Write data rows - VECTORIZED for performance
-        # Replace NaN with null_value (in-place to avoid copy)
         df_export = df.fillna(null_value)
-
-        # FAST PATH: Use vectorized numpy operations instead of Python loops
-        # Convert entire DataFrame to string array at once
-        values = df_export.values  # Get numpy array (no copy if possible)
+        values = df_export.values
 
         # Get list of discrete property columns for integer formatting
         discrete_cols = set()
         if discrete_labels:
             discrete_cols = set(discrete_labels.keys())
 
-        # Format all values at once using numpy vectorization
-        # This is 10-100x faster than iterrows()
-        formatted = np.empty(values.shape, dtype="U12")  # Pre-allocate string array
-        for col_idx in range(values.shape[1]):
-            col_name = df_export.columns[col_idx]
-            col_data = values[:, col_idx]
-
-            # Format column values (all same type within column)
-            if np.issubdtype(col_data.dtype, np.number):
-                # Discrete properties: format as integers (no decimals)
-                if col_name in discrete_cols:
-                    formatted[:, col_idx] = np.char.mod("%12.0f", col_data)
-                # Continuous/sampled properties: format with decimals
+        if is_v3:
+            # LAS 3.0: tab-separated values
+            formatted = np.empty(values.shape, dtype="U16")
+            for col_idx in range(values.shape[1]):
+                col_name = df_export.columns[col_idx]
+                col_data = values[:, col_idx]
+                if np.issubdtype(col_data.dtype, np.number):
+                    if col_name in discrete_cols:
+                        formatted[:, col_idx] = np.char.mod("%.0f", col_data)
+                    else:
+                        formatted[:, col_idx] = np.char.mod("%.4f", col_data)
                 else:
-                    formatted[:, col_idx] = np.char.mod("%12.4f", col_data)
-            else:
-                formatted[:, col_idx] = np.char.mod("%12s", col_data.astype(str))
+                    formatted[:, col_idx] = col_data.astype(str)
+            data_lines = ["\t".join(row) for row in formatted]
+        else:
+            # LAS 2.0: fixed-width columns
+            formatted = np.empty(values.shape, dtype="U12")
+            for col_idx in range(values.shape[1]):
+                col_name = df_export.columns[col_idx]
+                col_data = values[:, col_idx]
+                if np.issubdtype(col_data.dtype, np.number):
+                    if col_name in discrete_cols:
+                        formatted[:, col_idx] = np.char.mod("%12.0f", col_data)
+                    else:
+                        formatted[:, col_idx] = np.char.mod("%12.4f", col_data)
+                else:
+                    formatted[:, col_idx] = np.char.mod("%12s", col_data.astype(str))
+            data_lines = ["".join(row) for row in formatted]
 
-        # Join rows efficiently
-        data_lines = ["".join(row) for row in formatted]
         lines.extend(data_lines)
 
         # Write to file using buffered write
@@ -1266,12 +1298,15 @@ class LasFile:
         except Exception as e:
             raise LasFileError(f"Failed to write LAS file to {filepath}: {e}") from e
 
-    def export(self, filepath: str | Path, null_value: float = -999.25) -> None:
+    def export(
+        self, filepath: str | Path, null_value: float = -999.25, version: str | None = None
+    ) -> None:
         """
-        Export this LasFile instance to a LAS 2.0 format file.
+        Export this LasFile instance to a LAS file.
 
         This is an instance method that exports the LasFile's own data,
-        including all metadata from the ~Version, ~Well, ~Parameter, and ~Curve sections.
+        including all metadata from the ``~Version``, ``~Well``, ``~Parameter``,
+        and ``~Curve`` sections.
 
         Parameters
         ----------
@@ -1279,17 +1314,16 @@ class LasFile:
             Output LAS file path
         null_value : float, default -999.25
             Value to use for missing data
+        version : str, optional
+            LAS version to export as ("2.0" or "3.0").
+            If None, uses the version of the source file.
 
         Examples
         --------
-        >>> # Load, modify, and re-export a LAS file
         >>> las = LasFile('input.las')
-        >>> # ... modify via las.set_data(df) if needed ...
         >>> las.export('output.las')
 
-        >>> # Create LasFile from Well and export
-        >>> las = well.to_las(include=['PHIE', 'SW'])
-        >>> las.export('output.las')
+        >>> las.export('output_v3.las', version='3.0')
         """
         if self._data is None:
             raise LasFileError("No data loaded. Call .data() method first to load data.")
@@ -1356,6 +1390,7 @@ class LasFile:
                     discrete_thicknesses[prop_name] = thicknesses
 
         # Use static method to do the actual export, passing self as template
+        export_version = version or self._las_version
         LasFile.export_las(
             filepath=filepath,
             well_name=self.well_name or "UNKNOWN",
@@ -1367,6 +1402,7 @@ class LasFile:
             discrete_styles=discrete_styles if discrete_styles else None,
             discrete_thicknesses=discrete_thicknesses if discrete_thicknesses else None,
             template_las=self,
+            version=export_version,
         )
 
     def __repr__(self) -> str:

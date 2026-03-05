@@ -247,7 +247,6 @@ class WellView:
 
         # Calculate figure size if not provided
         if figsize is None:
-            len(self.template.tracks)
             total_width = sum(track.get("width", 1.0) for track in self.template.tracks)
             figsize = (max(2 * total_width, 8), 10)
 
@@ -1240,6 +1239,233 @@ class WellView:
                 zorder=11,
             )
 
+    @staticmethod
+    def _normalize_boundary_spec(spec, side: str) -> dict:
+        """Convert simple string/number fill boundary spec to dict format."""
+        if isinstance(spec, dict):
+            return spec
+        elif isinstance(spec, str):
+            if spec == "track_edge":
+                return {"track_edge": side}
+            else:
+                return {"curve": spec}
+        elif isinstance(spec, (int, float)):
+            return {"value": spec}
+        else:
+            return {}
+
+    @staticmethod
+    def _normalize_value(value, x_range, log_scale=False):
+        """Normalize a value to 0-1 based on x_range and scale."""
+        if x_range is None:
+            return value
+        x_min, x_max = x_range[0], x_range[1]
+        if log_scale:
+            value_clipped = np.clip(value, max(x_min, 1e-10), x_max)
+            return (np.log10(value_clipped) - np.log10(x_min)) / (np.log10(x_max) - np.log10(x_min))
+        else:
+            if x_min < x_max:
+                return (value - x_min) / (x_max - x_min)
+            else:
+                return (value - x_max) / (x_min - x_max)
+
+    @staticmethod
+    def _get_curve_info(curve_name: str, logs: list[dict], track_log_scale: bool):
+        """Get x_range and effective log_scale for a named curve."""
+        for log in logs:
+            if log.get("name") == curve_name and "x_range" in log:
+                scale_override = log.get("scale")
+                if scale_override == "log":
+                    log_scale = True
+                elif scale_override == "linear":
+                    log_scale = False
+                else:
+                    log_scale = track_log_scale
+                return log["x_range"], log_scale
+        return None, False
+
+    def _resolve_fill_boundary(
+        self,
+        spec: dict,
+        plotted_curves: dict,
+        logs: list[dict],
+        track_log_scale: bool,
+        n_points: int,
+        side: str,
+    ) -> np.ndarray | None:
+        """
+        Resolve a fill boundary specification to normalized values.
+
+        Returns
+        -------
+        np.ndarray or None
+            Normalized boundary values (0-1 scale), or None if spec is invalid.
+        """
+        if "curve" in spec:
+            curve_name = spec["curve"]
+            if curve_name not in plotted_curves:
+                warnings.warn(f"Fill {side} curve '{curve_name}' not found", stacklevel=3)
+                return None
+            values, _ = plotted_curves[curve_name]
+            x_range, log_scale = self._get_curve_info(curve_name, logs, track_log_scale)
+            if x_range:
+                if log_scale:
+                    values_clipped = np.clip(values, max(x_range[0], 1e-10), x_range[1])
+                    return (np.log10(values_clipped) - np.log10(x_range[0])) / (
+                        np.log10(x_range[1]) - np.log10(x_range[0])
+                    )
+                else:
+                    return (values - x_range[0]) / (x_range[1] - x_range[0])
+            return values
+
+        elif "value" in spec:
+            fixed_val = spec["value"]
+            if logs and "x_range" in logs[0]:
+                scale_override = logs[0].get("scale")
+                if scale_override == "log":
+                    log_scale = True
+                elif scale_override == "linear":
+                    log_scale = False
+                else:
+                    log_scale = track_log_scale
+                return np.full(
+                    n_points, self._normalize_value(fixed_val, logs[0]["x_range"], log_scale)
+                )
+            return np.full(n_points, fixed_val)
+
+        elif "track_edge" in spec:
+            edge_val = 0.0 if spec["track_edge"] == "left" else 1.0
+            return np.full(n_points, edge_val)
+
+        else:
+            warnings.warn(f"Fill {side} boundary not properly specified", stacklevel=3)
+            return None
+
+    def _render_colormap_fill(
+        self,
+        ax: plt.Axes,
+        left_values: np.ndarray,
+        right_values: np.ndarray,
+        depth_for_fill: np.ndarray,
+        fill: dict,
+        plotted_curves: dict,
+        left_spec: dict,
+        right_spec: dict,
+        boundary_valid_mask: np.ndarray,
+        track_log_scale: bool,
+        fill_alpha: float,
+    ) -> None:
+        """Render colormap-based fill using adaptive binning and PolyCollection."""
+        n_points = len(depth_for_fill)
+        cmap_name = fill["colormap"]
+
+        # Determine which curve drives the colormap
+        colormap_curve_name = fill.get("colormap_curve")
+        colormap_values = None
+
+        if colormap_curve_name and colormap_curve_name in plotted_curves:
+            colormap_values, _ = plotted_curves[colormap_curve_name]
+        elif colormap_curve_name:
+            warnings.warn(
+                f"Colormap curve '{colormap_curve_name}' not found, using boundary curves",
+                stacklevel=2,
+            )
+
+        if colormap_values is None:
+            if "curve" in left_spec and left_spec["curve"] in plotted_curves:
+                colormap_values, _ = plotted_curves[left_spec["curve"]]
+            elif "curve" in right_spec and right_spec["curve"] in plotted_curves:
+                colormap_values, _ = plotted_curves[right_spec["curve"]]
+            else:
+                warnings.warn(
+                    "Cannot determine colormap values (no curve specified for left or right)",
+                    stacklevel=2,
+                )
+                return
+
+        # Apply same boundary mask to colormap values
+        if not np.all(boundary_valid_mask):
+            colormap_values = colormap_values[boundary_valid_mask]
+
+        valid_mask = ~np.isnan(colormap_values)
+        if not np.any(valid_mask):
+            warnings.warn(
+                "Colormap curve has no valid (non-NaN) values in the current depth range. "
+                "Skipping fill.",
+                stacklevel=2,
+            )
+            return
+
+        color_range = fill.get(
+            "color_range", [np.nanmin(colormap_values), np.nanmax(colormap_values)]
+        )
+        color_log = fill.get("color_log", track_log_scale)
+
+        if color_log:
+            vmin = max(color_range[0], 1e-10)
+            vmax = max(color_range[1], vmin * 10)
+            norm = LogNorm(vmin=vmin, vmax=vmax)
+        else:
+            norm = Normalize(vmin=color_range[0], vmax=color_range[1])
+        cmap = plt.get_cmap(cmap_name)
+
+        n_intervals = n_points - 1
+        color_values = (colormap_values[:-1] + colormap_values[1:]) / 2
+        colors = cmap(norm(color_values))
+
+        target_polygons = 300
+        binned_verts = []
+        binned_colors = []
+
+        if n_intervals > 0 and n_intervals > target_polygons:
+            color_diffs = np.sqrt(np.sum((colors[1:, :3] - colors[:-1, :3]) ** 2, axis=1))
+            target_percentile = 100 * (1 - target_polygons / n_intervals)
+            color_threshold = max(np.percentile(color_diffs, target_percentile), 0.01)
+
+            bin_start_idx = 0
+            bin_color = colors[0]
+
+            for i in range(1, n_intervals):
+                if color_diffs[i - 1] > color_threshold:
+                    poly_verts = []
+                    for j in range(bin_start_idx, i + 1):
+                        poly_verts.append((left_values[j], depth_for_fill[j]))
+                    for j in range(i, bin_start_idx - 1, -1):
+                        poly_verts.append((right_values[j], depth_for_fill[j]))
+                    binned_verts.append(poly_verts)
+                    binned_colors.append(bin_color)
+                    bin_start_idx = i
+                    bin_color = colors[i]
+
+            # Close final bin
+            poly_verts = []
+            for j in range(bin_start_idx, n_intervals + 1):
+                poly_verts.append((left_values[j], depth_for_fill[j]))
+            for j in range(n_intervals, bin_start_idx - 1, -1):
+                poly_verts.append((right_values[j], depth_for_fill[j]))
+            binned_verts.append(poly_verts)
+            binned_colors.append(bin_color)
+        else:
+            for i in range(n_intervals):
+                binned_verts.append(
+                    [
+                        (left_values[i], depth_for_fill[i]),
+                        (right_values[i], depth_for_fill[i]),
+                        (right_values[i + 1], depth_for_fill[i + 1]),
+                        (left_values[i + 1], depth_for_fill[i + 1]),
+                    ]
+                )
+                binned_colors.append(colors[i])
+
+        poly_collection = PolyCollection(
+            binned_verts,
+            facecolors=binned_colors,
+            alpha=fill_alpha,
+            edgecolors="none",
+            linewidths=0,
+        )
+        ax.add_collection(poly_collection)
+
     def _add_fill_normalized(
         self,
         ax: plt.Axes,
@@ -1262,174 +1488,35 @@ class WellView:
         - {"value": <num>}: Use fixed value (dict format)
         - {"track_edge": "left"|"right"}: Use track edge (dict format)
         """
-        # Get reference depth from first curve in plotted_curves (downsampled)
-        # All curves should share the same downsampled depth grid
         if not plotted_curves:
             return
 
-        # Use depth from first plotted curve (which is downsampled)
         first_curve_data = next(iter(plotted_curves.values()))
         _, depth_for_fill = first_curve_data
         n_points = len(depth_for_fill)
 
-        # Helper to normalize boundary spec to dict format
-        def normalize_boundary_spec(spec, side):
-            """Convert simple string/number spec to dict format."""
-            if isinstance(spec, dict):
-                return spec
-            elif isinstance(spec, str):
-                if spec == "track_edge":
-                    return {"track_edge": side}
-                else:
-                    # Assume it's a curve name
-                    return {"curve": spec}
-            elif isinstance(spec, (int, float)):
-                return {"value": spec}
-            else:
-                return {}
+        left_spec = self._normalize_boundary_spec(fill.get("left", {}), "left")
+        right_spec = self._normalize_boundary_spec(fill.get("right", {}), "right")
 
-        # Normalize boundary specs (support both simple and dict formats)
-        left_raw = fill.get("left", {})
-        right_raw = fill.get("right", {})
-        left_spec = normalize_boundary_spec(left_raw, "left")
-        right_spec = normalize_boundary_spec(right_raw, "right")
-
-        # Helper to normalize a value based on x_range
-        def normalize_value(value, x_range, log_scale=False):
-            if x_range is None:
-                return value
-            x_min, x_max = x_range[0], x_range[1]
-            if log_scale:
-                # Log scale normalization
-                value_clipped = np.clip(value, max(x_min, 1e-10), x_max)
-                return (np.log10(value_clipped) - np.log10(x_min)) / (
-                    np.log10(x_max) - np.log10(x_min)
-                )
-            else:
-                # Linear scale normalization
-                if x_min < x_max:
-                    return (value - x_min) / (x_max - x_min)
-                else:
-                    return (value - x_max) / (x_min - x_max)
-
-        # Helper to get x_range and log_scale for a curve
-        def get_curve_info(curve_name):
-            for log in logs:
-                if log.get("name") == curve_name and "x_range" in log:
-                    # Determine scale: check for override, otherwise use track setting
-                    scale_override = log.get("scale")
-                    if scale_override == "log":
-                        log_scale = True
-                    elif scale_override == "linear":
-                        log_scale = False
-                    else:
-                        log_scale = track_log_scale
-                    return log["x_range"], log_scale
-            return None, False
-
-        # Get left boundary (normalized)
-        if "curve" in left_spec:
-            curve_name = left_spec["curve"]
-            if curve_name in plotted_curves:
-                values, _ = plotted_curves[curve_name]
-                x_range, log_scale = get_curve_info(curve_name)
-                if x_range:
-                    # Normalize using appropriate scale
-                    if log_scale:
-                        values_clipped = np.clip(values, max(x_range[0], 1e-10), x_range[1])
-                        left_values = (np.log10(values_clipped) - np.log10(x_range[0])) / (
-                            np.log10(x_range[1]) - np.log10(x_range[0])
-                        )
-                    else:
-                        # x_range[0] maps to 0, x_range[1] maps to 1 (handles reversed scales)
-                        left_values = (values - x_range[0]) / (x_range[1] - x_range[0])
-                else:
-                    left_values = values
-            else:
-                warnings.warn(f"Fill left curve '{curve_name}' not found", stacklevel=2)
-                return
-        elif "value" in left_spec:
-            # For fixed values, need to know which curve's scale to use
-            # Use first curve's x_range if available
-            fixed_val = left_spec["value"]
-            if logs and "x_range" in logs[0]:
-                # Get scale from first log (with track default)
-                scale_override = logs[0].get("scale")
-                if scale_override == "log":
-                    log_scale = True
-                elif scale_override == "linear":
-                    log_scale = False
-                else:
-                    log_scale = track_log_scale
-                left_values = np.full(
-                    n_points, normalize_value(fixed_val, logs[0]["x_range"], log_scale)
-                )
-            else:
-                left_values = np.full(n_points, fixed_val)
-        elif "track_edge" in left_spec:
-            if left_spec["track_edge"] == "left":
-                left_values = np.full(n_points, 0.0)
-            else:
-                left_values = np.full(n_points, 1.0)
-        else:
-            warnings.warn("Fill left boundary not properly specified", stacklevel=2)
+        left_values = self._resolve_fill_boundary(
+            left_spec, plotted_curves, logs, track_log_scale, n_points, "left"
+        )
+        if left_values is None:
             return
 
-        # Get right boundary (normalized)
-        if "curve" in right_spec:
-            curve_name = right_spec["curve"]
-            if curve_name in plotted_curves:
-                values, _ = plotted_curves[curve_name]
-                x_range, log_scale = get_curve_info(curve_name)
-                if x_range:
-                    # Normalize using appropriate scale
-                    if log_scale:
-                        values_clipped = np.clip(values, max(x_range[0], 1e-10), x_range[1])
-                        right_values = (np.log10(values_clipped) - np.log10(x_range[0])) / (
-                            np.log10(x_range[1]) - np.log10(x_range[0])
-                        )
-                    else:
-                        # x_range[0] maps to 0, x_range[1] maps to 1 (handles reversed scales)
-                        right_values = (values - x_range[0]) / (x_range[1] - x_range[0])
-                else:
-                    right_values = values
-            else:
-                warnings.warn(f"Fill right curve '{curve_name}' not found", stacklevel=2)
-                return
-        elif "value" in right_spec:
-            fixed_val = right_spec["value"]
-            if logs and "x_range" in logs[0]:
-                # Get scale from first log (with track default)
-                scale_override = logs[0].get("scale")
-                if scale_override == "log":
-                    log_scale = True
-                elif scale_override == "linear":
-                    log_scale = False
-                else:
-                    log_scale = track_log_scale
-                right_values = np.full(
-                    n_points, normalize_value(fixed_val, logs[0]["x_range"], log_scale)
-                )
-            else:
-                right_values = np.full(n_points, fixed_val)
-        elif "track_edge" in right_spec:
-            if right_spec["track_edge"] == "left":
-                right_values = np.full(n_points, 0.0)
-            else:
-                right_values = np.full(n_points, 1.0)
-        else:
-            warnings.warn("Fill right boundary not properly specified", stacklevel=2)
+        right_values = self._resolve_fill_boundary(
+            right_spec, plotted_curves, logs, track_log_scale, n_points, "right"
+        )
+        if right_values is None:
             return
 
         # Handle crossover - collapse fill where left is to the right of right
-        # This prevents fill from appearing when curves cross over
         crossover_mask = left_values > right_values
         left_values = np.where(crossover_mask, right_values, left_values)
 
         # Create valid mask - skip points where boundary values are NaN
         boundary_valid_mask = ~(np.isnan(left_values) | np.isnan(right_values))
 
-        # Filter arrays to only valid points
         if not np.all(boundary_valid_mask):
             left_values = left_values[boundary_valid_mask]
             right_values = right_values[boundary_valid_mask]
@@ -1437,165 +1524,26 @@ class WellView:
             n_points = len(depth_for_fill)
 
             if n_points < 2:
-                # Not enough valid points to draw fill
                 return
 
-        # Apply fill
         fill_color = fill.get("color", "lightblue")
         fill_alpha = fill.get("alpha", 0.3)
 
         if "colormap" in fill:
-            # Use colormap for fill - creates horizontal bands colored by curve value
-            cmap_name = fill["colormap"]
-
-            # Determine which curve drives the colormap (use original values, not normalized)
-            colormap_curve_name = fill.get("colormap_curve")
-            if colormap_curve_name:
-                if colormap_curve_name in plotted_curves:
-                    colormap_values, _ = plotted_curves[colormap_curve_name]
-                else:
-                    warnings.warn(
-                        f"Colormap curve '{colormap_curve_name}' not found, using boundary curves",
-                        stacklevel=2,
-                    )
-                    # Try left boundary curve first, then right boundary curve
-                    if "curve" in left_spec and left_spec["curve"] in plotted_curves:
-                        colormap_values, _ = plotted_curves[left_spec["curve"]]
-                    elif "curve" in right_spec and right_spec["curve"] in plotted_curves:
-                        colormap_values, _ = plotted_curves[right_spec["curve"]]
-                    else:
-                        warnings.warn("Cannot determine colormap values", stacklevel=2)
-                        return
-            else:
-                # Default: use left boundary curve's original values if available,
-                # otherwise try right boundary curve
-                if "curve" in left_spec and left_spec["curve"] in plotted_curves:
-                    colormap_values, _ = plotted_curves[left_spec["curve"]]
-                elif "curve" in right_spec and right_spec["curve"] in plotted_curves:
-                    colormap_values, _ = plotted_curves[right_spec["curve"]]
-                else:
-                    warnings.warn(
-                        "Cannot determine colormap values (no curve specified for left or right)",
-                        stacklevel=2,
-                    )
-                    return
-
-            # Apply same boundary mask to colormap values
-            if not np.all(boundary_valid_mask):
-                colormap_values = colormap_values[boundary_valid_mask]
-
-            # Get color range for normalization
-            # Check if we have valid values
-            valid_mask = ~np.isnan(colormap_values)
-            if not np.any(valid_mask):
-                warnings.warn(
-                    "Colormap curve has no valid (non-NaN) values in the current depth range. Skipping fill.",
-                    stacklevel=2,
-                )
-                return
-
-            color_range = fill.get(
-                "color_range", [np.nanmin(colormap_values), np.nanmax(colormap_values)]
+            self._render_colormap_fill(
+                ax,
+                left_values,
+                right_values,
+                depth_for_fill,
+                fill,
+                plotted_curves,
+                left_spec,
+                right_spec,
+                boundary_valid_mask,
+                track_log_scale,
+                fill_alpha,
             )
-            # Default color_log to track's log_scale setting
-            color_log = fill.get("color_log", track_log_scale)
-
-            # Use LogNorm for log scale colormap, Normalize for linear
-            if color_log:
-                # Ensure positive values for log scale
-                vmin = max(color_range[0], 1e-10)
-                vmax = max(color_range[1], vmin * 10)
-                norm = LogNorm(vmin=vmin, vmax=vmax)
-            else:
-                norm = Normalize(vmin=color_range[0], vmax=color_range[1])
-            cmap = plt.get_cmap(cmap_name)
-
-            # Create horizontal bands - each depth interval gets a color based on the curve value
-            # Use PolyCollection for performance (1000x faster than loop with fill_betweenx)
-            n_intervals = n_points - 1
-
-            # Compute color values for each interval (average of adjacent points)
-            color_values = (colormap_values[:-1] + colormap_values[1:]) / 2
-            colors = cmap(norm(color_values))
-
-            # Adaptive color binning: target polygon count while preserving detail
-            # More polygons where colors change rapidly, fewer where smooth
-            target_polygons = 300  # Good balance for performance and quality
-
-            binned_verts = []
-            binned_colors = []
-
-            if n_intervals > 0 and n_intervals > target_polygons:
-                # Calculate color differences between adjacent intervals
-                color_diffs = np.sqrt(np.sum((colors[1:, :3] - colors[:-1, :3]) ** 2, axis=1))
-
-                # Find adaptive threshold: use percentile to achieve target count
-                # Higher percentile = more aggressive binning
-                target_percentile = 100 * (1 - target_polygons / n_intervals)
-                color_threshold = np.percentile(color_diffs, target_percentile)
-
-                # Ensure minimum threshold to avoid over-binning
-                color_threshold = max(color_threshold, 0.01)
-
-                # Bin intervals using adaptive threshold
-                # IMPORTANT: Keep all vertices to preserve curve shape, only merge colors
-                bin_start_idx = 0
-                bin_color = colors[0]
-
-                for i in range(1, n_intervals):
-                    # Check if this color differs significantly from bin average
-                    color_diff = color_diffs[i - 1]
-
-                    if color_diff > color_threshold:
-                        # Significant color change - close current bin and start new one
-                        # Create polygon with ALL vertices from bin_start_idx to i (preserves curve shape)
-                        poly_verts = []
-                        # Top edge: left to right along the curve
-                        for j in range(bin_start_idx, i + 1):
-                            poly_verts.append((left_values[j], depth_for_fill[j]))
-                        # Right edge: top to bottom
-                        for j in range(i, bin_start_idx - 1, -1):
-                            poly_verts.append((right_values[j], depth_for_fill[j]))
-
-                        binned_verts.append(poly_verts)
-                        binned_colors.append(bin_color)
-
-                        # Start new bin
-                        bin_start_idx = i
-                        bin_color = colors[i]
-
-                # Close final bin
-                poly_verts = []
-                for j in range(bin_start_idx, n_intervals + 1):
-                    poly_verts.append((left_values[j], depth_for_fill[j]))
-                for j in range(n_intervals, bin_start_idx - 1, -1):
-                    poly_verts.append((right_values[j], depth_for_fill[j]))
-                binned_verts.append(poly_verts)
-                binned_colors.append(bin_color)
-            else:
-                # Too few intervals already - don't bin
-                for i in range(n_intervals):
-                    binned_verts.append(
-                        [
-                            (left_values[i], depth_for_fill[i]),
-                            (right_values[i], depth_for_fill[i]),
-                            (right_values[i + 1], depth_for_fill[i + 1]),
-                            (left_values[i + 1], depth_for_fill[i + 1]),
-                        ]
-                    )
-                    binned_colors.append(colors[i])
-
-            # Create PolyCollection with binned polygons
-            poly_collection = PolyCollection(
-                binned_verts,
-                facecolors=binned_colors,
-                alpha=fill_alpha,
-                edgecolors="none",
-                linewidths=0,
-            )
-            ax.add_collection(poly_collection)
         else:
-            # Simple solid color fill
             ax.fill_betweenx(
                 depth_for_fill,
                 left_values,
@@ -2131,11 +2079,11 @@ class WellView:
         Parameters
         ----------
         filepath : Union[str, Path]
-            Output file path (format determined by extension: .png, .pdf, .svg, etc.)
+            Output file path (format determined by extension: .png, .pdf, .svg, etc.).
         dpi : int, optional
-            Resolution for raster formats. If None, uses figure's dpi.
+            Resolution for raster formats. If None, uses the figure's dpi.
         bbox_inches : str, default 'tight'
-            Bounding box specification
+            Bounding box specification for the saved figure.
 
         Examples
         --------

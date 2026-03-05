@@ -2,9 +2,11 @@
 WellDataManager — global orchestrator for multi-well analysis.
 """
 
+from __future__ import annotations
+
 import warnings
 from pathlib import Path
-from typing import TYPE_CHECKING, Union
+from typing import TYPE_CHECKING
 
 import numpy as np
 import pandas as pd
@@ -16,7 +18,7 @@ from ..utils import sanitize_property_name, sanitize_well_name, suggest_similar_
 from .proxy import _ManagerMultiPropertyProxy, _ManagerPropertyProxy
 
 if TYPE_CHECKING:
-    from ..visualization import Template
+    from ..visualization import Crossplot, Template
 
 
 class WellDataManager:
@@ -176,7 +178,7 @@ class WellDataManager:
         combine: str | None = None,
         source_name: str | None = None,
         silent: bool = False,
-    ) -> "WellDataManager":
+    ) -> WellDataManager:
         """
         Load LAS file(s), auto-create well if needed.
 
@@ -407,7 +409,7 @@ class WellDataManager:
         y_col: str | None = "Y",
         z_col: str | None = "Z",
         include_coordinates: bool = False,
-    ) -> "WellDataManager":
+    ) -> WellDataManager:
         """
         Load formation tops data from a DataFrame into wells.
 
@@ -607,7 +609,7 @@ class WellDataManager:
         type_mappings: dict[str, str] | None = None,
         label_mappings: dict[str, dict[int, str]] | None = None,
         resample_method: str | None = None,
-    ) -> "WellDataManager":
+    ) -> WellDataManager:
         """
         Load properties from a DataFrame into wells.
 
@@ -955,7 +957,7 @@ class WellDataManager:
                 template_file = templates_folder / f"{template_name}.json"
                 template.save(template_file)
 
-    def load(self, path: str | Path) -> "WellDataManager":
+    def load(self, path: str | Path) -> WellDataManager:
         """
         Load all wells and templates from a project folder structure.
 
@@ -1180,7 +1182,7 @@ class WellDataManager:
         ----------
         name : str
             Either original name ("36/7-5 A"), sanitized ("36_7_5_A"),
-            or with well_ prefix ("well_36_7_5_A")
+            or with ``well_`` prefix ("well_36_7_5_A")
 
         Returns
         -------
@@ -1225,7 +1227,12 @@ class WellDataManager:
         Parameters
         ----------
         name : str
-            Well name (original, sanitized, or with well_ prefix)
+            Well name (original, sanitized, or with ``well_`` prefix).
+
+        Raises
+        ------
+        KeyError
+            If well not found.
 
         Examples
         --------
@@ -1241,14 +1248,14 @@ class WellDataManager:
         if well.name in self._name_mapping:
             del self._name_mapping[well.name]
 
-    def add_template(self, template: "Template") -> None:
+    def add_template(self, template: Template) -> None:
         """
         Store a template using its built-in name.
 
         Parameters
         ----------
         template : Template
-            Template object (uses template.name as the key)
+            Template object (uses ``template.name`` as the key).
 
         Examples
         --------
@@ -1268,19 +1275,19 @@ class WellDataManager:
 
         self._templates[template.name] = template
 
-    def set_template(self, name: str, template: Union["Template", dict]) -> None:
+    def set_template(self, name: str, template: Template | dict) -> None:
         """
         Store a template with a custom name (overrides template.name).
 
-        Use add_template() for the simpler case where the template's
+        Use ``add_template()`` for the simpler case where the template's
         built-in name should be used.
 
         Parameters
         ----------
         name : str
-            Template name for reference (overrides template.name)
+            Template name for reference (overrides ``template.name``).
         template : Union[Template, dict]
-            Template object or dictionary configuration
+            Template object or dictionary configuration.
 
         Examples
         --------
@@ -1297,7 +1304,7 @@ class WellDataManager:
 
         self._templates[name] = template
 
-    def get_template(self, name: str) -> "Template":
+    def get_template(self, name: str) -> Template:
         """
         Get a stored template by name.
 
@@ -1351,7 +1358,12 @@ class WellDataManager:
         Parameters
         ----------
         name : str
-            Template name to remove
+            Template name to remove.
+
+        Raises
+        ------
+        KeyError
+            If template not found.
 
         Examples
         --------
@@ -1400,7 +1412,7 @@ class WellDataManager:
         regression: str | dict | None = None,
         regression_by_color: str | dict | None = None,
         regression_by_group: str | dict | None = None,
-    ) -> "Crossplot":
+    ) -> Crossplot:
         """
         Create a multi-well crossplot.
 

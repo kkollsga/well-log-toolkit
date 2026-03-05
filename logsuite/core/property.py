@@ -72,6 +72,7 @@ class Property(PropertyOperationsMixin):
         Line style mapping for discrete properties (e.g., {0: 'solid', 1: 'dashed'})
     thicknesses : dict[int, float], optional
         Line thickness mapping for discrete properties (e.g., {0: 1.5, 1: 2.0})
+
     original_name : str, optional
         Original property name with special characters (from LAS file)
 
@@ -1309,6 +1310,7 @@ class Property(PropertyOperationsMixin):
         ----------
         intervals : list[dict] | dict[str, list[dict]] | str
             Interval definitions. Can be:
+
             - list[dict]: Direct list of intervals for the current well
             - dict[str, list[dict]]: Well-specific intervals keyed by well name.
               Current well must be included or raises error.
@@ -2731,6 +2733,7 @@ class Property(PropertyOperationsMixin):
         store_labels : bool, default True
             If True, store discrete property label mappings in the ~Parameter section.
             The actual data values remain numeric (standard LAS format).
+
         null_value : float, default -999.25
             Value to use for missing data in LAS file
 
