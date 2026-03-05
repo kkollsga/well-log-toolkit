@@ -10,6 +10,15 @@ To add a changelog entry, create a file in the `changes/` directory.
 
 <!-- towncrier release notes start -->
 
+## [0.1.156] - 2026-03-05
+
+### Performance
+
+- **Vectorized `compute_zone_intervals()`**: Replaced Python for-loop with numpy
+  vectorized operations for zone interval calculation, matching the existing
+  `compute_intervals()` pattern.
+- Added performance benchmark test for `compute_zone_intervals` with 10K-point arrays.
+
 ## [0.1.155] - 2026-03-05
 
 ### Features

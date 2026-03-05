@@ -109,31 +109,26 @@ def compute_zone_intervals(
             return np.array([base - top])
         return np.array([0.0])
 
-    zone_intervals = np.zeros(len(depth))
+    n = len(depth)
 
-    for i in range(len(depth)):
-        d = depth[i]
+    # Compute midpoint bounds (vectorized)
+    lower_bounds = np.empty(n)
+    upper_bounds = np.empty(n)
 
-        # Calculate midpoint bounds for this sample
-        if i == 0:
-            lower_bound = d - (depth[1] - d) / 2.0  # Mirror first interval
-        else:
-            lower_bound = (depth[i - 1] + d) / 2.0
+    # First point: mirror first interval
+    lower_bounds[0] = depth[0] - (depth[1] - depth[0]) / 2.0
+    # Middle + last points: midpoint with previous neighbor
+    lower_bounds[1:] = (depth[:-1] + depth[1:]) / 2.0
 
-        if i == len(depth) - 1:
-            upper_bound = d + (d - depth[-2]) / 2.0  # Mirror last interval
-        else:
-            upper_bound = (d + depth[i + 1]) / 2.0
+    # Last point: mirror last interval
+    upper_bounds[-1] = depth[-1] + (depth[-1] - depth[-2]) / 2.0
+    # First + middle points: midpoint with next neighbor
+    upper_bounds[:-1] = (depth[:-1] + depth[1:]) / 2.0
 
-        # Truncate to zone boundaries
-        effective_lower = max(lower_bound, top)
-        effective_upper = min(upper_bound, base)
-
-        # Only count if there's overlap with the zone
-        if effective_upper > effective_lower:
-            zone_intervals[i] = effective_upper - effective_lower
-        else:
-            zone_intervals[i] = 0.0
+    # Truncate to zone boundaries and compute intervals
+    effective_lower = np.maximum(lower_bounds, top)
+    effective_upper = np.minimum(upper_bounds, base)
+    zone_intervals = np.maximum(effective_upper - effective_lower, 0.0)
 
     return zone_intervals
 

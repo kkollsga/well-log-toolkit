@@ -7,7 +7,7 @@ for fast array computations.
 import numpy as np
 import time
 from well_log_toolkit import Well, Property
-from well_log_toolkit.analysis.statistics import compute_intervals
+from well_log_toolkit.analysis.statistics import compute_intervals, compute_zone_intervals
 
 
 def test_compute_intervals_correctness():
@@ -123,6 +123,40 @@ def test_vectorized_operations_speed():
     print("\n" + "=" * 70)
     print("All operations use numpy vectorization for maximum performance")
     print("=" * 70)
+
+
+def test_compute_zone_intervals_performance():
+    """Benchmark vectorized compute_zone_intervals with 10K-point depth array."""
+    n_samples = 10_000
+    depth = np.arange(2800.0, 2800.0 + n_samples * 0.15, 0.15)
+    top = 2900.0
+    base = 3100.0
+
+    # Warm up
+    compute_zone_intervals(depth, top, base)
+
+    # Benchmark
+    n_runs = 50
+    start = time.perf_counter()
+    for _ in range(n_runs):
+        result = compute_zone_intervals(depth, top, base)
+    elapsed = (time.perf_counter() - start) / n_runs
+
+    # Correctness checks
+    assert len(result) == len(depth)
+    # Points outside zone should have zero intervals
+    outside_mask = (depth < top - 0.15) | (depth > base + 0.15)
+    assert np.all(result[outside_mask] == 0.0)
+    # Points inside zone should have positive intervals
+    inside_mask = (depth > top + 0.15) & (depth < base - 0.15)
+    assert np.all(result[inside_mask] > 0.0)
+
+    # Performance: vectorized should finish well under 1ms per call
+    assert elapsed < 0.01, f"compute_zone_intervals too slow: {elapsed*1000:.2f} ms"
+
+    print(f"\n✓ compute_zone_intervals ({n_samples:,} samples, {n_runs} runs):")
+    print(f"  Avg time: {elapsed*1000:.4f} ms")
+    print(f"  Throughput: {n_samples/elapsed:,.0f} samples/sec")
 
 
 def test_vectorization_summary():
