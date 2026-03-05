@@ -794,6 +794,72 @@ class Property(PropertyOperationsMixin):
             original_name=self.original_name
         )
 
+    def apply(self, func, name: Optional[str] = None) -> 'Property':
+        """
+        Apply a function to values, returning a new Property.
+
+        Parameters
+        ----------
+        func : callable
+            Function that takes a numpy array and returns a numpy array
+            of the same shape.
+        name : str, optional
+            Name for the new property. Defaults to '{name}_applied'.
+
+        Returns
+        -------
+        Property
+            New property with transformed values on the same depth grid.
+
+        Examples
+        --------
+        >>> log_perm = well.PERM.apply(np.log10, name='LOG_PERM')
+        >>> normalized = well.PHIE.apply(lambda v: (v - v.min()) / (v.max() - v.min()))
+        """
+        new_values = func(self.values.copy())
+        return Property(
+            name=name or f"{self.name}_applied",
+            depth=self.depth.copy(),
+            values=new_values,
+            parent_well=self.parent_well,
+            unit=self.unit,
+            source_name='computed',
+            original_name=self.original_name,
+        )
+
+    def histogram(
+        self, bins: int = 50, weighted: bool = True
+    ) -> tuple[np.ndarray, np.ndarray]:
+        """
+        Compute histogram of property values.
+
+        Parameters
+        ----------
+        bins : int, default 50
+            Number of histogram bins.
+        weighted : bool, default True
+            If True, weight counts by depth intervals.
+
+        Returns
+        -------
+        tuple[np.ndarray, np.ndarray]
+            (counts, bin_edges) — same format as ``numpy.histogram``.
+
+        Examples
+        --------
+        >>> counts, edges = well.PHIE.histogram(bins=20)
+        >>> counts, edges = well.PHIE.histogram(weighted=False)
+        """
+        valid_mask = ~np.isnan(self.values)
+        valid_values = self.values[valid_mask]
+        if len(valid_values) == 0:
+            return np.array([]), np.array([])
+        if weighted:
+            intervals = compute_intervals(self.depth)
+            valid_weights = intervals[valid_mask]
+            return np.histogram(valid_values, bins=bins, weights=valid_weights)
+        return np.histogram(valid_values, bins=bins)
+
     def min(self) -> float:
         """
         Return minimum value (ignoring NaN).

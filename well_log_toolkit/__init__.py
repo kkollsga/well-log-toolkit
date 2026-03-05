@@ -55,6 +55,8 @@ from .analysis.statistics import (
     std,
     percentile,
     mode,
+    geometric_mean,
+    harmonic_mean,
     compute_all_statistics,
 )
 from .exceptions import (
@@ -75,6 +77,7 @@ from .analysis.regression import (
     ExponentialRegression,
     PolynomialRegression,
     PowerRegression,
+    PolynomialExponentialRegression,
 )
 
 __all__ = [
@@ -93,6 +96,7 @@ __all__ = [
     "ExponentialRegression",
     "PolynomialRegression",
     "PowerRegression",
+    "PolynomialExponentialRegression",
     # Utilities
     "sanitize_well_name",
     "sanitize_property_name",
@@ -103,6 +107,8 @@ __all__ = [
     "std",
     "percentile",
     "mode",
+    "geometric_mean",
+    "harmonic_mean",
     "compute_all_statistics",
     # Exceptions
     "WellLogError",

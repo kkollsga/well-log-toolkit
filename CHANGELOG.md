@@ -10,6 +10,22 @@ To add a changelog entry, create a file in the `changes/` directory.
 
 <!-- towncrier release notes start -->
 
+## [0.1.157] - 2026-03-05
+
+### Features
+
+- **`geometric_mean()` and `harmonic_mean()`**: New statistical functions for
+  permeability averaging (geometric) and parallel flow averaging (harmonic).
+  Both support depth-weighted and arithmetic modes.
+- **`Property.apply(func)`**: Apply arbitrary functions to property values,
+  returning a new Property on the same depth grid.
+- **`Property.histogram(bins, weighted)`**: Compute histogram of property
+  values, optionally weighted by depth intervals.
+- **`PolynomialExponentialRegression`**: Now exported at top-level
+  (`from well_log_toolkit import PolynomialExponentialRegression`).
+- **Basic LAS 3.0 support**: Read LAS 3.0 files with `~Log_Definition` and
+  `~Log_Data` sections (single data section, tab-delimited).
+
 ## [0.1.156] - 2026-03-05
 
 ### Performance

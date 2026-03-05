@@ -14,6 +14,8 @@ from .statistics import (
     std,
     percentile,
     mode,
+    geometric_mean,
+    harmonic_mean,
     compute_all_statistics,
 )
 from .regression import (
@@ -34,6 +36,8 @@ __all__ = [
     "std",
     "percentile",
     "mode",
+    "geometric_mean",
+    "harmonic_mean",
     "compute_all_statistics",
     # Regression
     "LinearRegression",

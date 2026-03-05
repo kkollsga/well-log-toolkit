@@ -72,7 +72,7 @@ class LasFile:
     """
     
     # Supported LAS versions
-    SUPPORTED_VERSIONS = {'2.0', '2'}
+    SUPPORTED_VERSIONS = {'2.0', '2', '3.0', '3'}
 
     def __init__(self, filepath: Union[str, Path], _from_dataframe: bool = False):
         self.filepath = Path(filepath)
@@ -95,6 +95,7 @@ class LasFile:
         self._data: Optional[pd.DataFrame] = None
         self._ascii_start_line: Optional[int] = None
         self._curve_names: list[str] = []  # Preserve original order
+        self._las_version: str = '2.0'  # Set during _validate_version()
 
         # Auto-parse headers on init (skip if from DataFrame)
         if not _from_dataframe:
@@ -826,6 +827,12 @@ class LasFile:
                         current_section = 'curve'
                     elif section_name.startswith('param'):  # parameter or parameters
                         current_section = 'parameter'
+                    # LAS 3.0 section names
+                    elif section_name == 'log_definition':
+                        current_section = 'curve'
+                    elif section_name == 'log_data':
+                        self._ascii_start_line = line_number + 1
+                        break  # Stop parsing, data section found
                     elif section_name.startswith('ascii') or section_name == 'a':
                         self._ascii_start_line = line_number + 1
                         break  # Stop parsing, data section found
@@ -884,9 +891,11 @@ class LasFile:
         if version not in self.SUPPORTED_VERSIONS:
             raise UnsupportedVersionError(
                 f"Unsupported LAS version: {version}. "
-                f"Supported versions: {', '.join(self.SUPPORTED_VERSIONS)}"
+                f"Supported versions: {', '.join(sorted(self.SUPPORTED_VERSIONS))}"
             )
-        
+
+        self._las_version = version
+
         wrap = self.version_info.get('WRAP', 'NO').strip().upper()
         if wrap != 'NO':
             raise UnsupportedVersionError(
@@ -901,10 +910,12 @@ class LasFile:
 
         # OPTIMIZED: Read directly from file instead of joining lines
         # Skip header rows and let pandas parse the ASCII section directly
+        # LAS 3.x may use tab-delimited data
+        separator = '\t' if self._las_version.startswith('3') else r'\s+'
         try:
             df = pd.read_csv(
                 self.filepath,
-                sep=r'\s+',
+                sep=separator,
                 names=self._curve_names,
                 na_values=[self.null_value],
                 skiprows=self._ascii_start_line,  # Skip header rows

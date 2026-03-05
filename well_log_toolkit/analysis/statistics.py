@@ -526,6 +526,139 @@ def mode(
         raise ValueError(f"Unknown method '{method}'. Use 'weighted' or 'arithmetic'.")
 
 
+def geometric_mean(
+    values: np.ndarray,
+    weights: Optional[np.ndarray] = None,
+    method: Optional[str] = None
+) -> Union[float, dict]:
+    """
+    Compute geometric mean with optional method selection.
+
+    Geometric mean is appropriate for permeability averaging and other
+    log-normally distributed properties. Only positive values are used;
+    if any valid value is non-positive, returns NaN.
+
+    Parameters
+    ----------
+    values : np.ndarray
+        Property values (may contain NaN). Must be positive for valid result.
+    weights : np.ndarray, optional
+        Weights (depth intervals) for weighted calculation.
+    method : str, optional
+        'weighted' for depth-weighted geometric mean, 'arithmetic' for simple.
+        If None, returns dict with both methods.
+
+    Returns
+    -------
+    float or dict
+        If method specified: single float value.
+        If method is None: {'weighted': float, 'arithmetic': float}
+
+    See Also
+    --------
+    mean : Arithmetic mean.
+    harmonic_mean : Harmonic mean (parallel flow averaging).
+
+    Examples
+    --------
+    >>> values = np.array([1.0, 10.0, 100.0])
+    >>> geometric_mean(values, method='arithmetic')
+    10.0
+    """
+    def _arithmetic():
+        valid = values[~np.isnan(values)]
+        if len(valid) == 0 or np.any(valid <= 0):
+            return np.nan
+        return float(np.exp(np.mean(np.log(valid))))
+
+    def _weighted():
+        if weights is None:
+            raise ValueError("weights required for weighted method")
+        valid_mask = ~np.isnan(values) & ~np.isnan(weights)
+        valid_values = values[valid_mask]
+        valid_weights = weights[valid_mask]
+        if len(valid_values) == 0 or np.sum(valid_weights) == 0 or np.any(valid_values <= 0):
+            return np.nan
+        return float(np.exp(
+            np.sum(valid_weights * np.log(valid_values)) / np.sum(valid_weights)
+        ))
+
+    if method == 'weighted':
+        return _weighted()
+    elif method == 'arithmetic':
+        return _arithmetic()
+    elif method is None:
+        return {'weighted': _weighted(), 'arithmetic': _arithmetic()}
+    else:
+        raise ValueError(f"Unknown method '{method}'. Use 'weighted' or 'arithmetic'.")
+
+
+def harmonic_mean(
+    values: np.ndarray,
+    weights: Optional[np.ndarray] = None,
+    method: Optional[str] = None
+) -> Union[float, dict]:
+    """
+    Compute harmonic mean with optional method selection.
+
+    Harmonic mean is appropriate for averaging rates and parallel flow
+    properties (e.g., horizontal permeability in layered systems).
+    Only positive values are used; if any valid value is non-positive,
+    returns NaN.
+
+    Parameters
+    ----------
+    values : np.ndarray
+        Property values (may contain NaN). Must be positive for valid result.
+    weights : np.ndarray, optional
+        Weights (depth intervals) for weighted calculation.
+    method : str, optional
+        'weighted' for depth-weighted harmonic mean, 'arithmetic' for simple.
+        If None, returns dict with both methods.
+
+    Returns
+    -------
+    float or dict
+        If method specified: single float value.
+        If method is None: {'weighted': float, 'arithmetic': float}
+
+    See Also
+    --------
+    mean : Arithmetic mean.
+    geometric_mean : Geometric mean (log-normal averaging).
+
+    Examples
+    --------
+    >>> values = np.array([1.0, 2.0, 4.0])
+    >>> harmonic_mean(values, method='arithmetic')
+    1.714...
+    """
+    def _arithmetic():
+        valid = values[~np.isnan(values)]
+        if len(valid) == 0 or np.any(valid <= 0):
+            return np.nan
+        return float(len(valid) / np.sum(1.0 / valid))
+
+    def _weighted():
+        if weights is None:
+            raise ValueError("weights required for weighted method")
+        valid_mask = ~np.isnan(values) & ~np.isnan(weights)
+        valid_values = values[valid_mask]
+        valid_weights = weights[valid_mask]
+        if len(valid_values) == 0 or np.sum(valid_weights) == 0 or np.any(valid_values <= 0):
+            return np.nan
+        return float(np.sum(valid_weights) / np.sum(valid_weights / valid_values))
+
+    if method == 'weighted':
+        return _weighted()
+    elif method == 'arithmetic':
+        return _arithmetic()
+    elif method is None:
+        return {'weighted': _weighted(), 'arithmetic': _arithmetic()}
+    else:
+        raise ValueError(f"Unknown method '{method}'. Use 'weighted' or 'arithmetic'.")
+
+
 def compute_all_statistics(
     values: np.ndarray,
     depth: np.ndarray
